@@ -9,6 +9,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.navigation.NavType
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -53,8 +55,11 @@ fun DoxrayNavRail() {
                 }
                 composable(Destinations.DOSSIERS) {
                     val app = LocalContext.current.applicationContext as android.app.Application
-                    val dao = AppDatabase.getDatabase(app).identityDao()
-                    val vm = remember { DossierListViewModel(dao) }
+                    val vm: DossierListViewModel = viewModel(
+                        factory = viewModelFactory {
+                            initializer { DossierListViewModel(AppDatabase.getDatabase(app).identityDao()) }
+                        },
+                    )
                     DossierListScreen(viewModel = vm, onOpen = { faceId ->
                         navController.navigate(Destinations.dossierDetail(faceId))
                     })
@@ -65,20 +70,28 @@ fun DoxrayNavRail() {
                 ) { entry ->
                     val faceId = entry.arguments?.getString("faceId").orEmpty()
                     val app = LocalContext.current.applicationContext as android.app.Application
-                    val db = AppDatabase.getDatabase(app)
-                    val vm = remember(faceId) {
-                        DossierDetailViewModel(
-                            faceId = faceId,
-                            identityDao = db.identityDao(),
-                            encounterDao = db.encounterDao(),
-                        )
-                    }
+                    val vm: DossierDetailViewModel = viewModel(
+                        key = faceId,
+                        factory = viewModelFactory {
+                            initializer {
+                                val db = AppDatabase.getDatabase(app)
+                                DossierDetailViewModel(
+                                    faceId = faceId,
+                                    identityDao = db.identityDao(),
+                                    encounterDao = db.encounterDao(),
+                                )
+                            }
+                        },
+                    )
                     DossierDetailScreen(viewModel = vm, onDeleted = { navController.popBackStack() })
                 }
                 composable(Destinations.AUDIT) {
                     val app = LocalContext.current.applicationContext as android.app.Application
-                    val dao = AppDatabase.getDatabase(app).auditDao()
-                    val vm = remember { AuditLogViewModel(dao) }
+                    val vm: AuditLogViewModel = viewModel(
+                        factory = viewModelFactory {
+                            initializer { AuditLogViewModel(AppDatabase.getDatabase(app).auditDao()) }
+                        },
+                    )
                     AuditLogScreen(viewModel = vm)
                 }
             }
