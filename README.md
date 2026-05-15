@@ -10,3 +10,44 @@ Real-time facial recognition based person search using Meta Ray Bans
 - Additional identity correlation via Yandex Reverse Image Search.
 - Robust Scraper Fallbacks (Jsoup) for all APIs in case of rate limits or service unavailability.
 - Package Namespace: `com.hereliesaz.doxray`
+
+## Setup
+
+### API keys
+Put any of the following in a project-root `local.properties` (gitignored):
+
+```
+SERPAPI_KEY=<your-serpapi-key>
+FACESEEK_KEY=<your-faceseek-key>
+LENSO_KEY=<your-lenso-key>
+FACECHECK_KEY=<your-facecheck-key>
+```
+
+Any missing key causes that service to skip the API path and fall back to the scraper.
+
+### Meta Wearables DAT SDK (closed beta)
+The real `com.facebook.wearables:dat-android` artifact is published to a private GitHub Packages repo. To use it instead of the local stub fallback, add the following to `local.properties`:
+
+```
+gh.user=<your-github-username>
+gh.token=<personal-access-token-with-read:packages>
+gh.packages.url=https://maven.pkg.github.com/facebook/meta-wearables-dat-android
+```
+
+Then verify with:
+
+```
+./gradlew verifyMetaSdk
+```
+
+If `gh.packages.url` is left empty the build uses local stubs from `app/src/stub/java/` and the glasses-dependent code paths no-op at runtime.
+
+### Debug HTTP capture
+Debug builds set `BuildConfig.DEBUG_CAPTURE_HTTP=true`. Every HTTP request/response from the network layer is written to
+`Android/data/com.hereliesaz.doxray/files/captures/{timestamp}_{seq}_{host}.{req|resp}.bin`
+on the device. Pull them with:
+
+```
+adb shell run-as com.hereliesaz.doxray ls /sdcard/Android/data/com.hereliesaz.doxray/files/captures/
+adb pull /sdcard/Android/data/com.hereliesaz.doxray/files/captures/ ./captures/
+```
