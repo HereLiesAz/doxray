@@ -48,7 +48,6 @@ class LocalFaceCache(
         if (bestMatch != null) {
             val currentTime = System.currentTimeMillis()
             identityDao.recordEncounter(bestMatch.faceId, currentTime)
-            recordEncounter(bestMatch.faceId, currentTime)
             AuditLogger.log(
                 AuditLogger.Type.IDENTIFY,
                 summary = "Cache hit: ${bestMatch.primaryIdentity}",
@@ -57,6 +56,7 @@ class LocalFaceCache(
                     put("similarity", highestSimilarity)
                 },
             )
+            recordEncounter(bestMatch.faceId, currentTime)
             val index = memoryCache.indexOf(bestMatch)
             if (index != -1) {
                 memoryCache[index] = bestMatch.copy(
@@ -89,12 +89,12 @@ class LocalFaceCache(
         )
         identityDao.insertIdentity(record)
         memoryCache.add(record)
-        recordEncounter(faceId, currentTime)
         AuditLogger.log(
             AuditLogger.Type.IDENTIFY,
             summary = "New identity: $primaryIdentity",
             details = JSONObject().put("faceId", faceId),
         )
+        recordEncounter(faceId, currentTime)
     }
 
     private suspend fun recordEncounter(faceId: String, timestamp: Long) {
