@@ -16,11 +16,11 @@ interface IdentityDao {
     suspend fun getIdentityById(faceId: String): IdentityRecord?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertIdentity(record: IdentityRecord)
+    suspend fun insertIdentity(record: IdentityRecord): Long
 
     @Update
-    suspend fun updateIdentity(record: IdentityRecord)
+    suspend fun updateIdentity(record: IdentityRecord): Int
     
     @Query("UPDATE identity_records SET lastSeenTimestamp = :timestamp, encounterCount = encounterCount + 1 WHERE faceId = :faceId")
-    suspend fun recordEncounter(faceId: String, timestamp: Long)
+    suspend fun recordEncounter(faceId: String, timestamp: Long): Int
 }

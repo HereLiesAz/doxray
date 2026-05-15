@@ -33,3 +33,5 @@ google-services.json
 # Android Profiling
 *.hprof
 /.kotlin/sessions/kotlin-compiler-2939598917735297349.salive
+/.kotlin/sessions/kotlin-compiler-4152110931482308572.salive
+/.kotlin/sessions/kotlin-compiler-14712903348186475670.salive
