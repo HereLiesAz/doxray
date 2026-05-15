@@ -99,7 +99,11 @@ class MainActivity : ComponentActivity() {
         embeddingGenerator = EmbeddingGenerator(this)
 
         appDatabase = AppDatabase.getDatabase(this)
-        localFaceCache = LocalFaceCache(appDatabase.identityDao())
+        localFaceCache = LocalFaceCache(
+            identityDao = appDatabase.identityDao(),
+            encounterDao = appDatabase.encounterDao(),
+            locationService = com.hereliesaz.doxray.location.LocationService(this),
+        )
 
         lifecycleScope.launch { localFaceCache.loadFromDatabase() }
 
