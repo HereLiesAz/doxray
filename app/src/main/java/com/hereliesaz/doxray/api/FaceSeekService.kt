@@ -49,30 +49,29 @@ class FaceSeekService {
                 .post(requestBody)
                 .build()
 
-            val response = client.newCall(request).execute()
-            
-            if (response.isSuccessful) {
-                val responseData = response.body?.string()
-                Log.d(TAG, "FaceSeek Response: $responseData")
-                
-                if (responseData != null) {
-                    val json = JSONObject(responseData)
-                    // Assuming FaceSeek returns an array of matches or a single top match
-                    // This parsing logic needs to match exact FaceSeek response schema
-                    if (json.has("matches")) {
-                        val matches = json.getJSONArray("matches")
-                        if (matches.length() > 0) {
-                            val topMatch = matches.getJSONObject(0)
-                            return@withContext Result(
-                                faceId = topMatch.optString("face_id", "unknown"),
-                                confidence = topMatch.optDouble("confidence", 0.0).toFloat(),
-                                referenceImageUrl = topMatch.optString("url", "")
-                            )
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val responseData = response.body?.string()
+                    Log.d(TAG, "FaceSeek Response: $responseData")
+                    if (responseData != null) {
+                        val json = JSONObject(responseData)
+                        // Assuming FaceSeek returns an array of matches or a single top match
+                        // This parsing logic needs to match exact FaceSeek response schema
+                        if (json.has("matches")) {
+                            val matches = json.getJSONArray("matches")
+                            if (matches.length() > 0) {
+                                val topMatch = matches.getJSONObject(0)
+                                return@withContext Result(
+                                    faceId = topMatch.optString("face_id", "unknown"),
+                                    confidence = topMatch.optDouble("confidence", 0.0).toFloat(),
+                                    referenceImageUrl = topMatch.optString("url", "")
+                                )
+                            }
                         }
                     }
+                } else {
+                    Log.e(TAG, "FaceSeek HTTP Error: ${response.code} - ${response.body?.string()}")
                 }
-            } else {
-                Log.e(TAG, "FaceSeek HTTP Error: ${response.code} - ${response.body?.string()}")
             }
             null
         } catch (e: Exception) {
