@@ -1,16 +1,15 @@
 package com.hereliesaz.doxray.api
 
 import android.util.Log
+import com.hereliesaz.doxray.net.HttpClients
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import java.util.concurrent.TimeUnit
 
 /**
  * Non-API (anonymous) fallback for facecheck.id. Replays the same upload + poll
@@ -29,10 +28,7 @@ class FaceCheckIdScraperService {
     private val MAX_POLL_ATTEMPTS = 12
     private val POLL_INTERVAL_MS = 2500L
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .build()
+    private val client get() = HttpClients.browser()
 
     suspend fun identifyFace(imageBytes: ByteArray): FaceCheckIdService.Result? = withContext(Dispatchers.IO) {
         Log.d(TAG, "Scraping FaceCheck.ID demo flow for frame (${imageBytes.size} bytes)...")

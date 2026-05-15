@@ -2,16 +2,15 @@ package com.hereliesaz.doxray.api
 
 import android.util.Log
 import com.hereliesaz.doxray.BuildConfig
+import com.hereliesaz.doxray.net.HttpClients
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import java.util.concurrent.TimeUnit
 
 /**
  * facecheck.id integration. Two-phase: upload the frame, then poll the search
@@ -27,10 +26,7 @@ class FaceCheckIdService {
     private val MAX_POLL_ATTEMPTS = 10
     private val POLL_INTERVAL_MS = 2000L
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .build()
+    private val client get() = HttpClients.api()
 
     suspend fun identifyFace(imageBytes: ByteArray): Result? = withContext(Dispatchers.IO) {
         if (FACECHECK_API_KEY.isBlank()) {
