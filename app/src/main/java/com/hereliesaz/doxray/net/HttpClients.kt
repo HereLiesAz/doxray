@@ -26,7 +26,8 @@ object HttpClients {
     private var browserClient: OkHttpClient? = null
 
     fun init(app: Application) {
-        val capturesDir = File(app.getExternalFilesDir(null), "captures")
+        val baseDir = app.getExternalFilesDir(null) ?: app.filesDir
+        val capturesDir = File(baseDir, "captures")
         val writer = FileCaptureWriter(capturesDir)
         val capture = CaptureInterceptor(writer) { BuildConfig.DEBUG_CAPTURE_HTTP }
 
@@ -66,7 +67,7 @@ object HttpClients {
             maybe("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
             maybe("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
             maybe("Accept-Language", "en-US,en;q=0.9")
-            maybe("Accept-Encoding", "gzip, deflate, br")
+            // Do NOT set Accept-Encoding — let OkHttp manage transparent gzip decompression.
             maybe("Upgrade-Insecure-Requests", "1")
             maybe("Sec-Fetch-Dest", "document")
             maybe("Sec-Fetch-Mode", "navigate")
