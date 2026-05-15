@@ -102,6 +102,10 @@ android {
         unitTests.isIncludeAndroidResources = true
     }
 
+    ksp {
+        arg("room.schemaLocation", "$projectDir/schemas")
+    }
+
     androidResources {
         noCompress.add("tflite")
     }
