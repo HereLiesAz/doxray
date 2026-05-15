@@ -20,7 +20,7 @@ class FaceTrackerManager {
 
     private val options = FaceDetectorOptions.Builder()
         .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
-        .setTrackingEnabled(true)
+        .enableTracking()
         .build()
 
     private val detector = FaceDetection.getClient(options)
