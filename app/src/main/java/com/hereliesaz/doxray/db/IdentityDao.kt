@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface IdentityDao {
@@ -23,4 +24,10 @@ interface IdentityDao {
     
     @Query("UPDATE identity_records SET lastSeenTimestamp = :timestamp, encounterCount = encounterCount + 1 WHERE faceId = :faceId")
     suspend fun recordEncounter(faceId: String, timestamp: Long): Int
+
+    @Query("SELECT * FROM identity_records ORDER BY lastSeenTimestamp DESC")
+    fun observeAll(): Flow<List<IdentityRecord>>
+
+    @Query("DELETE FROM identity_records WHERE faceId = :faceId")
+    suspend fun delete(faceId: String): Int
 }
