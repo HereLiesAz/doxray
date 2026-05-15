@@ -161,6 +161,16 @@ dependencies {
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
 
+    // Navigation rail
+    implementation("com.github.HereLiesAz:AzNavRail:8.11")
+    implementation("androidx.navigation:navigation-compose:2.9.5")
+
+    // Compose ViewModel binding
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
+
+    // Location (Fused Provider)
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+
     // Testing
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
@@ -169,6 +179,7 @@ dependencies {
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
     androidTestImplementation(platform("androidx.compose:compose-bom:2026.05.00"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.room:room-testing:2.8.4")
 }
 
 // Best-effort download of the MobileFaceNet TFLite model at build time.

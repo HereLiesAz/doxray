@@ -21,6 +21,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven { url = uri("https://jitpack.io") }
 
         // Optional: closed-beta GitHub Packages repo for the Meta Wearables DAT SDK.
         // Provide gh.packages.url, gh.user, gh.token in local.properties (or as env vars).
