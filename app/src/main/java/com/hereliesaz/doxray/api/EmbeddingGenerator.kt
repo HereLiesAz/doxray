@@ -26,7 +26,7 @@ class EmbeddingGenerator(context: Context) {
 
     init {
         try {
-            val modelBuffer = loadModelFile(context, "mobile_face_net.tflite")
+            val modelBuffer = loadModelFile(context, "mobilefacenet.tflite")
             val options = Interpreter.Options().apply {
                 // Use NNAPI or GPU delegates here if needed for performance
                 numThreads = 4
@@ -34,7 +34,7 @@ class EmbeddingGenerator(context: Context) {
             interpreter = Interpreter(modelBuffer, options)
             Log.d(TAG, "MobileFaceNet TFLite model loaded successfully.")
         } catch (e: Exception) {
-            Log.e(TAG, "Error loading MobileFaceNet model. Ensure 'mobile_face_net.tflite' is in the assets folder.", e)
+            Log.e(TAG, "Error loading MobileFaceNet model. Ensure 'mobilefacenet.tflite' is in the assets folder.", e)
             // Model not present; error handled, interpreter stays null
         }
     }
