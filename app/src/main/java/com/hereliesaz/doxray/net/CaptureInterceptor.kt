@@ -1,8 +1,10 @@
 package com.hereliesaz.doxray.net
 
+import com.hereliesaz.doxray.audit.AuditLogger
 import okhttp3.Interceptor
 import okhttp3.Response
 import okio.Buffer
+import org.json.JSONObject
 import java.net.URI
 import java.util.concurrent.atomic.AtomicLong
 
@@ -22,19 +24,31 @@ class CaptureInterceptor(
     private val seq = AtomicLong(0L)
 
     override fun intercept(chain: Interceptor.Chain): Response {
-        if (!enabled()) return chain.proceed(chain.request())
-
         val request = chain.request()
-        val ts = System.currentTimeMillis()
-        val n = seq.incrementAndGet()
-        val host = try { URI(request.url.toString()).host ?: "unknown" } catch (e: Exception) { "unknown" }
-        val base = "${ts}_${n}_${host}"
+        val response = if (enabled()) {
+            val ts = System.currentTimeMillis()
+            val n = seq.incrementAndGet()
+            val host = try { URI(request.url.toString()).host ?: "unknown" } catch (e: Exception) { "unknown" }
+            val base = "${ts}_${n}_${host}"
 
-        writer.write("$base.req.bin", encodeRequest(request))
+            writer.write("$base.req.bin", encodeRequest(request))
+            val resp = chain.proceed(request)
+            val peek = resp.peekBody(MAX_BODY_BYTES.toLong())
+            writer.write("$base.resp.bin", encodeResponse(resp, peek.bytes()))
+            resp
+        } else {
+            chain.proceed(request)
+        }
 
-        val response = chain.proceed(request)
-        val peek = response.peekBody(MAX_BODY_BYTES.toLong())
-        writer.write("$base.resp.bin", encodeResponse(response, peek.bytes()))
+        AuditLogger.log(
+            AuditLogger.Type.API_CALL,
+            summary = "${request.method} ${request.url.host}${request.url.encodedPath} → ${response.code}",
+            details = JSONObject().apply {
+                put("method", request.method)
+                put("url", request.url.toString())
+                put("code", response.code)
+            },
+        )
         return response
     }
 
