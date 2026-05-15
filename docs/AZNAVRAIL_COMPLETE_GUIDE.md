@@ -1,4 +1,4 @@
-# AzNavRail Complete Guide (Sample App Edition)
+a# AzNavRail Complete Guide (Sample App Edition)
 
 This guide documents the complete configuration and usage of the AzNavRail library as demonstrated in the official **Sample App**. It serves as the definitive reference for setting up layouts, configuring the rail, and implementing all supported components.
 
