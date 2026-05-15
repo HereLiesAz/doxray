@@ -1,67 +1,73 @@
 package com.hereliesaz.doxray.api
 
 import android.util.Log
+import com.hereliesaz.doxray.net.HttpClients
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.Request
 import org.json.JSONObject
 import org.jsoup.Jsoup
 
 /**
- * Scraper implementation for smartbackgroundchecks.com.
- * Gathers deep background data based on a parsed name.
+ * Scraper for smartbackgroundchecks.com. Performs a homepage GET first to
+ * collect cookies, then the people-search GET. If the WAF returns
+ * 403/503 the response is logged and the scrape returns null.
+ *
+ * Selectors are best-effort; they will be refined after a real device run
+ * with `CaptureInterceptor` enabled produces real HTML for inspection.
  */
 class SmartBackgroundChecksScraper {
 
     private val TAG = "SmartBackgroundScraper"
+    private val ROOT = "https://www.smartbackgroundchecks.com"
 
     suspend fun searchBackground(name: String): JSONObject? = withContext(Dispatchers.IO) {
         Log.d(TAG, "Scraping SmartBackgroundChecks for: $name")
         try {
-            // Basic parsing: remove trailing identifiers like "(LinkedIn)", split to first/last
             val cleanName = name.replace(Regex("\\(.*\\)"), "").trim()
             val parts = cleanName.split(" ")
-            
             if (parts.size < 2) {
-                Log.w(TAG, "Cannot scrape background without at least a first and last name: $cleanName")
+                Log.w(TAG, "Need first + last name to search: $cleanName")
                 return@withContext null
             }
-            
-            val firstName = parts[0]
-            val lastName = parts.last()
-            
-            val searchUrl = "https://www.smartbackgroundchecks.com/people/$firstName-$lastName"
-            
-            val document = Jsoup.connect(searchUrl)
-                .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                .header("Accept-Language", "en-US,en;q=0.9")
-                .timeout(15000)
-                .get()
+            val first = parts[0]
+            val last = parts.last()
 
-            // Traverse DOM to find contact info. These selectors are hypothetical/approximate 
-            // based on standard background check site layouts.
-            val resultObject = JSONObject()
-            
-            val phoneElements = document.select(".phone-list .phone-item, a[href^=tel:]")
-            val phones = phoneElements.map { it.text() }.distinct()
-            
-            val addressElements = document.select(".address-list .address-item, .current-address")
-            val addresses = addressElements.map { it.text() }.distinct()
-            
-            val relativeElements = document.select(".relatives-list .relative-item")
-            val relatives = relativeElements.map { it.text() }.distinct()
-
-            resultObject.put("source", "SmartBackgroundChecks")
-            resultObject.put("phones", phones)
-            resultObject.put("addresses", addresses)
-            resultObject.put("relatives", relatives)
-            
-            Log.d(TAG, "Found background data: Phones: ${phones.size}, Addresses: ${addresses.size}")
-            
-            if (phones.isEmpty() && addresses.isEmpty()) {
-                 return@withContext null
+            // 1. Warmup — collect cookies from the homepage.
+            HttpClients.browser().newCall(
+                Request.Builder().url("$ROOT/").get().build()
+            ).execute().use { warm ->
+                if (!warm.isSuccessful) {
+                    Log.w(TAG, "Warmup failed (${warm.code}); search will still be attempted.")
+                }
             }
-            
-            return@withContext resultObject
+
+            // 2. Search.
+            val searchUrl = "$ROOT/people/$first-$last"
+            val html = HttpClients.browser().newCall(
+                Request.Builder().url(searchUrl).get().build()
+            ).execute().use { response ->
+                if (!response.isSuccessful) {
+                    val snippet = response.body?.string()?.take(200) ?: ""
+                    Log.e(TAG, "SmartBg HTTP ${response.code}; body snippet: $snippet")
+                    return@withContext null
+                }
+                response.body?.string()
+            } ?: return@withContext null
+
+            val document = Jsoup.parse(html)
+            val phones = document.select(".phone-list .phone-item, a[href^=tel:]").map { it.text() }.distinct()
+            val addresses = document.select(".address-list .address-item, .current-address").map { it.text() }.distinct()
+            val relatives = document.select(".relatives-list .relative-item").map { it.text() }.distinct()
+
+            val result = JSONObject().apply {
+                put("source", "SmartBackgroundChecks")
+                put("phones", phones)
+                put("addresses", addresses)
+                put("relatives", relatives)
+            }
+            Log.d(TAG, "SmartBg parsed: phones=${phones.size}, addr=${addresses.size}, rel=${relatives.size}")
+            if (phones.isEmpty() && addresses.isEmpty()) null else result
         } catch (e: Exception) {
             Log.e(TAG, "Exception during SmartBackgroundChecks scraping", e)
             null
