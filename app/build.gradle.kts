@@ -75,8 +75,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            buildConfigField("boolean", "DEBUG_CAPTURE_HTTP", "true")
+        }
         release {
             isMinifyEnabled = false
+            buildConfigField("boolean", "DEBUG_CAPTURE_HTTP", "false")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
@@ -170,7 +174,7 @@ dependencies {
 // EmbeddingGenerator will log a warning and skip local face deduplication.
 val downloadTfliteModel by tasks.registering {
     val urlProvider = providers.gradleProperty("tflite.model.url")
-    val outFile = layout.projectDirectory.file("src/main/assets/mobile_face_net.tflite").asFile
+    val outFile = layout.projectDirectory.file("src/main/assets/mobilefacenet.tflite").asFile
     outputs.file(outFile)
     outputs.upToDateWhen { outFile.exists() }
     onlyIf {
@@ -187,7 +191,7 @@ val downloadTfliteModel by tasks.registering {
             }
         } catch (e: Exception) {
             logger.warn("Could not download TFLite model from $rawUrl (${e.message}). " +
-                "Drop a mobile_face_net.tflite into app/src/main/assets/ manually, " +
+                "Drop a mobilefacenet.tflite into app/src/main/assets/ manually, " +
                 "or override `tflite.model.url` to a working mirror.")
             // Ensure no partial file is left behind
             if (outFile.exists() && outFile.length() == 0L) outFile.delete()
