@@ -203,3 +203,39 @@ val downloadTfliteModel by tasks.registering {
 }
 
 tasks.named("preBuild").configure { dependsOn(downloadTfliteModel) }
+
+/**
+ * Reports whether the closed-beta Meta Wearables DAT SDK is available.
+ *  - If `gh.packages.url` is unset → prints WARN with the stub-fallback note.
+ *  - If set → tries to resolve the dependency and prints OK or the error.
+ *
+ * Usage: `./gradlew verifyMetaSdk`
+ */
+tasks.register("verifyMetaSdk") {
+    group = "verification"
+    description = "Verifies whether the real Meta Wearables DAT SDK can be resolved."
+    doLast {
+        if (!hasMetaSdk) {
+            logger.lifecycle("WARN: gh.packages.url not configured in local.properties. " +
+                "Stub fallback active. To use the real SDK, set gh.user, gh.token, " +
+                "and gh.packages.url=https://maven.pkg.github.com/facebook/meta-wearables-dat-android.")
+            return@doLast
+        }
+        val cfg = configurations.findByName("debugRuntimeClasspath")
+        if (cfg == null) {
+            logger.lifecycle("WARN: debugRuntimeClasspath configuration not found.")
+            return@doLast
+        }
+        try {
+            val resolved = cfg.resolvedConfiguration.firstLevelModuleDependencies
+                .any { it.moduleGroup == "com.facebook.wearables" && it.moduleName == "dat-android" }
+            if (resolved) {
+                logger.lifecycle("OK: real DAT SDK resolved (com.facebook.wearables:dat-android).")
+            } else {
+                logger.lifecycle("WARN: stub fallback active — DAT SDK not present on classpath despite gh.packages.url being set.")
+            }
+        } catch (e: Exception) {
+            logger.lifecycle("ERROR: could not resolve DAT SDK: ${e.message}")
+        }
+    }
+}
