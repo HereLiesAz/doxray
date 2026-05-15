@@ -1,6 +1,7 @@
 package com.hereliesaz.doxray.api
 
 import android.util.Log
+import com.hereliesaz.doxray.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import retrofit2.Retrofit
@@ -15,8 +16,7 @@ import retrofit2.Response
 class YandexSearchService {
 
     private val TAG = "YandexSearchService"
-    // TODO: Securely inject this via BuildConfig in a production environment
-    private val SERP_API_KEY = "YOUR_SERPAPI_API_KEY" 
+    private val SERP_API_KEY = BuildConfig.SERPAPI_KEY
 
     private interface SerpApi {
         @GET("search.json")
@@ -35,8 +35,12 @@ class YandexSearchService {
     private val api = retrofit.create(SerpApi::class.java)
 
     suspend fun searchIdentity(imageUrl: String): Result? = withContext(Dispatchers.IO) {
+        if (SERP_API_KEY.isBlank()) {
+            Log.w(TAG, "SERPAPI_KEY not configured; skipping Yandex API call (scraper fallback will run).")
+            return@withContext null
+        }
         Log.d(TAG, "Searching Yandex via SerpApi for: $imageUrl")
-        
+
         try {
             val response = api.searchYandexImages(imageUrl = imageUrl, apiKey = SERP_API_KEY)
             

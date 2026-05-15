@@ -1,7 +1,28 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
     id("kotlin-kapt")
+}
+
+// Read API keys from local.properties (falls back to empty strings, in which case
+// the app uses the scraper paths instead of the API paths at runtime).
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+fun secret(key: String): String =
+    localProps.getProperty(key) ?: System.getenv(key) ?: ""
+
+// When `gh.packages.url` is configured (in local.properties or as the GH_PACKAGES_URL
+// env var) we pull the real closed-beta Meta Wearables DAT SDK from GitHub Packages.
+// Otherwise we compile against a tiny local stub that mirrors the SDK's public
+// signatures so the rest of the app still builds and runs (sans glasses I/O).
+val hasMetaSdk: Boolean = run {
+    val url = localProps.getProperty("gh.packages.url") ?: System.getenv("GH_PACKAGES_URL")
+    !url.isNullOrBlank()
 }
 
 android {
@@ -14,6 +35,10 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
+
+        buildConfigField("String", "SERPAPI_KEY", "\"${secret("SERPAPI_KEY")}\"")
+        buildConfigField("String", "FACESEEK_KEY", "\"${secret("FACESEEK_KEY")}\"")
+        buildConfigField("String", "LENSO_KEY", "\"${secret("LENSO_KEY")}\"")
     }
 
     buildTypes {
@@ -23,30 +48,44 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions {
-        jvmTarget = "1.8"
+        jvmTarget = "17"
     }
     buildFeatures {
-        viewBinding = true
+        buildConfig = true
+        compose = true
     }
-    
+
     androidResources {
         noCompress.add("tflite")
+    }
+
+    sourceSets.getByName("main") {
+        if (!hasMetaSdk) {
+            java.srcDir("src/stub/java")
+        }
     }
 }
 
 dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.appcompat:appcompat:1.6.1")
-    implementation("com.google.android.material:material:1.11.0")
-    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
-    
-    // Coroutines & Lifecycle for async API calls
+
+    // Coroutines & Lifecycle
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.7.0")
+
+    // Jetpack Compose
+    val composeBom = platform("androidx.compose:compose-bom:2024.02.00")
+    implementation(composeBom)
+    implementation("androidx.activity:activity-compose:1.8.2")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.material3:material3")
+    debugImplementation("androidx.compose.ui:ui-tooling")
 
     // Networking
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
@@ -55,28 +94,72 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
 
-    // Meta Wearables Device Access Toolkit (DAT)
-    implementation("com.facebook.wearables:dat-android:1.0.0-beta")
+    // JSON parsing used by service implementations and scrapers
+    implementation("org.json:json:20231013")
+
+    // Meta Wearables Device Access Toolkit (DAT) — closed-beta dependency.
+    // Resolution requires gh.packages.url + credentials in local.properties.
+    // Falls back to local stub classes under src/stub/java/ when unconfigured.
+    if (hasMetaSdk) {
+        implementation("com.facebook.wearables:dat-android:1.0.0-beta")
+    } else {
+        logger.lifecycle("Meta DAT SDK: gh.packages.url not set, using local stub classes from src/stub/java/")
+    }
 
     // Scraping
     implementation("org.jsoup:jsoup:1.17.2")
 
-    // ML Kit for Local Face Detection & Tracking
+    // ML Kit
     implementation("com.google.mlkit:face-detection:16.1.5")
-    
-    // TensorFlow Lite for Local Facial Embeddings
+
+    // TensorFlow Lite
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 
-    // Room Database for Persistent Storage
-    val room_version = "2.6.1"
-    implementation("androidx.room:room-runtime:$room_version")
-    implementation("androidx.room:room-ktx:$room_version")
-    kapt("androidx.room:room-compiler:$room_version")
+    // Room
+    val roomVersion = "2.6.1"
+    implementation("androidx.room:room-runtime:$roomVersion")
+    implementation("androidx.room:room-ktx:$roomVersion")
+    kapt("androidx.room:room-compiler:$roomVersion")
 
     // Testing
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
+    androidTestImplementation(platform("androidx.compose:compose-bom:2024.02.00"))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
 }
+
+// Best-effort download of the MobileFaceNet TFLite model at build time.
+// Override the URL via the `tflite.model.url` Gradle property. If the URL is
+// blank, unreachable, or returns an error, the build continues; the runtime
+// EmbeddingGenerator will log a warning and skip local face deduplication.
+val downloadTfliteModel by tasks.registering {
+    val urlProvider = providers.gradleProperty("tflite.model.url")
+    val outFile = layout.projectDirectory.file("src/main/assets/mobile_face_net.tflite").asFile
+    outputs.file(outFile)
+    outputs.upToDateWhen { outFile.exists() }
+    onlyIf {
+        !outFile.exists() && urlProvider.isPresent && urlProvider.get().isNotBlank()
+    }
+    doLast {
+        outFile.parentFile.mkdirs()
+        val rawUrl = urlProvider.get()
+        try {
+            val url = uri(rawUrl).toURL()
+            logger.lifecycle("Downloading TFLite model from $url")
+            url.openStream().use { input ->
+                outFile.outputStream().use { output -> input.copyTo(output) }
+            }
+        } catch (e: Exception) {
+            logger.warn("Could not download TFLite model from $rawUrl (${e.message}). " +
+                "Drop a mobile_face_net.tflite into app/src/main/assets/ manually, " +
+                "or override `tflite.model.url` to a working mirror.")
+            // Ensure no partial file is left behind
+            if (outFile.exists() && outFile.length() == 0L) outFile.delete()
+        }
+    }
+}
+
+tasks.named("preBuild").configure { dependsOn(downloadTfliteModel) }

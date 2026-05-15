@@ -1,6 +1,7 @@
 package com.hereliesaz.doxray.api
 
 import android.util.Log
+import com.hereliesaz.doxray.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -17,8 +18,7 @@ import java.util.concurrent.TimeUnit
 class FaceSeekService {
 
     private val TAG = "FaceSeekService"
-    // TODO: Securely inject this via BuildConfig in a production environment
-    private val FACESEEK_API_KEY = "YOUR_FACESEEK_API_KEY"
+    private val FACESEEK_API_KEY = BuildConfig.FACESEEK_KEY
     private val FACESEEK_HOST = "https://api.faceseek.online"
 
     private val client = OkHttpClient.Builder()
@@ -30,8 +30,12 @@ class FaceSeekService {
      * Uploads a frame to FaceSeek using multipart/form-data.
      */
     suspend fun identifyFace(imageBytes: ByteArray): Result? = withContext(Dispatchers.IO) {
+        if (FACESEEK_API_KEY.isBlank()) {
+            Log.w(TAG, "FACESEEK_KEY not configured; skipping FaceSeek API call (scraper fallback will run).")
+            return@withContext null
+        }
         Log.d(TAG, "Uploading frame to FaceSeek (${imageBytes.size} bytes)...")
-        
+
         try {
             val requestBody = MultipartBody.Builder()
                 .setType(MultipartBody.FORM)

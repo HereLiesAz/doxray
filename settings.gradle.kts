@@ -1,3 +1,5 @@
+import java.util.Properties
+
 pluginManagement {
     repositories {
         google()
@@ -5,19 +7,36 @@ pluginManagement {
         gradlePluginPortal()
     }
 }
+
+val localProps = Properties().apply {
+    val f = rootDir.resolve("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+
+fun prop(key: String): String? =
+    localProps.getProperty(key) ?: System.getenv(key.replace('.', '_').uppercase())
+
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         google()
         mavenCentral()
-        maven {
-            url = uri("https://maven.pkg.github.com/OWNER/REPO") // Placeholder for actual repo if needed
-            credentials {
-                username = System.getenv("GH_USER") ?: "token"
-                password = System.getenv("GH_TOKEN")
+
+        // Optional: closed-beta GitHub Packages repo for the Meta Wearables DAT SDK.
+        // Provide gh.packages.url, gh.user, gh.token in local.properties (or as env vars).
+        val ghUrl = prop("gh.packages.url")
+        if (!ghUrl.isNullOrBlank()) {
+            maven {
+                name = "GitHubPackages"
+                url = uri(ghUrl)
+                credentials {
+                    username = prop("gh.user") ?: "token"
+                    password = prop("gh.token") ?: ""
+                }
             }
         }
     }
 }
+
 rootProject.name = "Doxray"
 include(":app")

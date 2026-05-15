@@ -2,6 +2,7 @@ package com.hereliesaz.doxray.api
 
 import android.util.Base64
 import android.util.Log
+import com.hereliesaz.doxray.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -17,8 +18,7 @@ import java.util.concurrent.TimeUnit
 class LensoSearchService {
 
     private val TAG = "LensoSearchService"
-    // TODO: Securely inject this via BuildConfig in a production environment
-    private val LENSO_API_KEY = "YOUR_LENSO_API_KEY"
+    private val LENSO_API_KEY = BuildConfig.LENSO_KEY
     private val LENSO_FACE_HOST = "https://api.eyematch.ai" // Eyematch is Lenso's facial search endpoint
 
     private val client = OkHttpClient.Builder()
@@ -30,8 +30,12 @@ class LensoSearchService {
      * Uploads a frame to Lenso/Eyematch using base64 JSON payload as per their documentation.
      */
     suspend fun identifyFace(imageBytes: ByteArray): Result? = withContext(Dispatchers.IO) {
+        if (LENSO_API_KEY.isBlank()) {
+            Log.w(TAG, "LENSO_KEY not configured; skipping Lenso API call (scraper fallback will run).")
+            return@withContext null
+        }
         Log.d(TAG, "Uploading frame to Lenso.ai (${imageBytes.size} bytes)...")
-        
+
         try {
             val base64Image = Base64.encodeToString(imageBytes, Base64.NO_WRAP)
             

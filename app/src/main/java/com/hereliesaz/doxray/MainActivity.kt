@@ -5,49 +5,73 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import com.hereliesaz.doxray.api.FaceSeekService
+import com.hereliesaz.doxray.api.CyberBackgroundChecksScraper
+import com.hereliesaz.doxray.api.EmbeddingGenerator
 import com.hereliesaz.doxray.api.FaceSeekScraperService
-import com.hereliesaz.doxray.api.YandexSearchService
+import com.hereliesaz.doxray.api.FaceSeekService
+import com.hereliesaz.doxray.api.FaceTrackerManager
+import com.hereliesaz.doxray.api.LensoScraperService
+import com.hereliesaz.doxray.api.LensoSearchService
+import com.hereliesaz.doxray.api.LocalFaceCache
+import com.hereliesaz.doxray.api.SmartBackgroundChecksScraper
 import com.hereliesaz.doxray.api.YandexScraperService
-import com.hereliesaz.doxray.databinding.ActivityMainBinding
+import com.hereliesaz.doxray.api.YandexSearchService
+import com.hereliesaz.doxray.db.AppDatabase
 import com.hereliesaz.doxray.meta.MetaGlassesManager
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-
-import com.hereliesaz.doxray.api.FaceTrackerManager
-import com.hereliesaz.doxray.api.LocalFaceCache
-import com.hereliesaz.doxray.api.EmbeddingGenerator
-import com.hereliesaz.doxray.api.LensoSearchService
-import com.hereliesaz.doxray.api.LensoScraperService
-import com.hereliesaz.doxray.api.SmartBackgroundChecksScraper
-import com.hereliesaz.doxray.api.CyberBackgroundChecksScraper
-import com.hereliesaz.doxray.db.AppDatabase
-import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.CancellationException
 
-class MainActivity : AppCompatActivity() {
+private const val TAG = "MainActivity"
+private const val PERMISSION_REQUEST_CODE = 1001
 
-    private lateinit var binding: ActivityMainBinding
+class MainActivity : ComponentActivity() {
+
     private lateinit var metaGlassesManager: MetaGlassesManager
-    
+
     // Primary API Services
     private val faceSeekService = FaceSeekService()
     private val yandexSearchService = YandexSearchService()
     private val lensoSearchService = LensoSearchService()
-    
+
     // Fallback Scraper Services
     private val faceSeekScraper = FaceSeekScraperService()
     private val yandexScraper = YandexScraperService()
     private val lensoScraper = LensoScraperService()
-    
+
     // Deep Background Scraper Services
     private val smartBgScraper = SmartBackgroundChecksScraper()
     private val cyberBgScraper = CyberBackgroundChecksScraper()
@@ -57,69 +81,67 @@ class MainActivity : AppCompatActivity() {
     private lateinit var localFaceCache: LocalFaceCache
     private lateinit var embeddingGenerator: EmbeddingGenerator
     private lateinit var appDatabase: AppDatabase
-    
+
     // Active investigation jobs
     private val activeInvestigations = ConcurrentHashMap<Int, Job>()
-    
-    private val PERMISSION_REQUEST_CODE = 1001
+
+    // Compose-observable UI state
+    private val uiState = DoxrayUiState()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
 
         metaGlassesManager = MetaGlassesManager(this)
         embeddingGenerator = EmbeddingGenerator(this)
 
-        // Initialize DB and Cache
         appDatabase = AppDatabase.getDatabase(this)
         localFaceCache = LocalFaceCache(appDatabase.identityDao())
-        
-        lifecycleScope.launch {
-            localFaceCache.loadFromDatabase()
-        }
 
-        setupUI()
-        checkPermissions()
-    }
+        lifecycleScope.launch { localFaceCache.loadFromDatabase() }
 
-    private fun setupUI() {
-        binding.btnConnect.setOnClickListener {
-            if (checkPermissions()) {
-                connectToGlasses()
+        setContent {
+            MaterialTheme {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    DoxrayScreen(
+                        state = uiState,
+                        onConnect = {
+                            if (checkPermissions()) connectToGlasses()
+                        },
+                        onDisconnect = {
+                            metaGlassesManager.stopVideoStream()
+                            metaGlassesManager.disconnect()
+                            uiState.setConnected(false)
+                            appendLog("Disconnected from glasses.")
+                        }
+                    )
+                }
             }
         }
 
-        binding.btnDisconnect.setOnClickListener {
-            metaGlassesManager.stopVideoStream()
-            metaGlassesManager.disconnect()
-            updateUIState(false)
-            appendLog("Disconnected from glasses.")
-        }
+        checkPermissions()
     }
 
     private fun connectToGlasses() {
         appendLog("Attempting connection...")
         try {
             metaGlassesManager.connect()
-            updateUIState(true)
+            uiState.setConnected(true)
             appendLog("Connected successfully.")
-            
+
             metaGlassesManager.startVideoStream(object : MetaGlassesManager.FrameListener {
                 override fun onFrameReceived(imageBytes: ByteArray) {
-                    // Feed every frame into the ML Kit Face Tracker
                     faceTrackerManager.processFrame(imageBytes, object : FaceTrackerManager.FaceFocusListener {
                         override fun onFaceFocused(focusedImageBytes: ByteArray, trackingId: Int, faceCrop: ByteArray) {
                             if (activeInvestigations.containsKey(trackingId)) return
-                            
+
                             runOnUiThread { appendLog("Target acquired (ID: $trackingId). Processing search...") }
-                            
+
                             val job = lifecycleScope.launch {
                                 processFocusedFace(focusedImageBytes, faceCrop, trackingId)
                             }
                             activeInvestigations[trackingId] = job
                         }
-                        
+
                         override fun onFaceLost(trackingId: Int) {
                             val job = activeInvestigations.remove(trackingId)
                             if (job != null && job.isActive) {
@@ -129,20 +151,20 @@ class MainActivity : AppCompatActivity() {
                         }
 
                         override fun onError(e: Exception) {
-                            Log.e("MainActivity", "Face tracking error", e)
+                            Log.e(TAG, "Face tracking error", e)
                         }
                     })
                 }
 
                 override fun onError(error: Throwable) {
-                    runOnUiThread { 
+                    runOnUiThread {
                         appendLog("Stream Error: ${error.message}")
                         Toast.makeText(this@MainActivity, "Stream Error", Toast.LENGTH_SHORT).show()
                     }
                 }
             })
         } catch (e: Exception) {
-            updateUIState(false)
+            uiState.setConnected(false)
             appendLog("Connection failed: ${e.message}")
             Toast.makeText(this, "Connection failed", Toast.LENGTH_SHORT).show()
         }
@@ -150,21 +172,17 @@ class MainActivity : AppCompatActivity() {
 
     private suspend fun processFocusedFace(imageBytes: ByteArray, faceCrop: ByteArray, trackingId: Int) {
         try {
-            // Check Local Cache First
             val embedding = embeddingGenerator.generateEmbedding(faceCrop)
             val cachedMatch = localFaceCache.findMatch(embedding)
 
             if (cachedMatch != null) {
-                // Investigative Flow: User has seen this person before
-                val lastSeenDate = SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault()).format(Date(cachedMatch.lastSeenTimestamp))
                 val msg = "Cached Match: ${cachedMatch.primaryIdentity}. Encounters: ${cachedMatch.encounterCount}."
-                runOnUiThread { 
+                runOnUiThread {
                     appendLog(msg)
                     appendLog("Known Links: ${cachedMatch.socialLinks}")
                 }
                 metaGlassesManager.playAudioMessage("Match found: ${cachedMatch.primaryIdentity}. Previous encounters: ${cachedMatch.encounterCount}")
-                
-                // If background data is empty, we can continue investigating
+
                 if (cachedMatch.backgroundData == "{}" || cachedMatch.backgroundData.isEmpty()) {
                     metaGlassesManager.playAudioMessage("Resuming background investigation.")
                     performDeepBackgroundScrape(cachedMatch.primaryIdentity, cachedMatch.faceId, embedding, cachedMatch.socialLinks.split(","))
@@ -172,13 +190,11 @@ class MainActivity : AppCompatActivity() {
                 return
             }
 
-            // Not in cache, proceed with remote search
             var primaryIdentity = ""
             var socialLinks = listOf<String>()
             var referenceImageUrl = ""
             var faceId = ""
 
-            // 1. Identify Face via Lenso (Primary)
             var lensoResult = lensoSearchService.identifyFace(imageBytes)
             if (lensoResult == null) {
                 runOnUiThread { appendLog("Lenso API failed, trying scraper fallback...") }
@@ -190,13 +206,12 @@ class MainActivity : AppCompatActivity() {
                 referenceImageUrl = lensoResult.referenceImageUrl
                 faceId = lensoResult.faceId
             } else {
-                // Fallback to FaceSeek if Lenso doesn't find a confident match
                 var faceResult = faceSeekService.identifyFace(imageBytes)
                 if (faceResult == null) {
                     runOnUiThread { appendLog("FaceSeek API failed, trying scraper fallback...") }
                     faceResult = faceSeekScraper.identifyFace(imageBytes)
                 }
-                
+
                 if (faceResult != null && faceResult.confidence > 0.6f) {
                     runOnUiThread { appendLog("FaceSeek matched! ID: ${faceResult.faceId}") }
                     referenceImageUrl = faceResult.referenceImageUrl
@@ -204,11 +219,9 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            // Provide early audio feedback if a face was matched visually
             if (referenceImageUrl.isNotEmpty()) {
                 metaGlassesManager.playAudioMessage("Face matched. Correlating identity...")
-                
-                // 2. Correlate Identity via Yandex
+
                 var identityResult = yandexSearchService.searchIdentity(referenceImageUrl)
                 if (identityResult == null) {
                     runOnUiThread { appendLog("Yandex API failed, trying scraper fallback...") }
@@ -225,13 +238,12 @@ class MainActivity : AppCompatActivity() {
 
             if (primaryIdentity.isNotEmpty()) {
                 val msg = "Identity correlated: $primaryIdentity"
-                runOnUiThread { 
-                    appendLog(msg) 
+                runOnUiThread {
+                    appendLog(msg)
                     appendLog("Links: ${socialLinks.joinToString(", ")}")
                 }
                 metaGlassesManager.playAudioMessage(msg)
-                
-                // Continue following leads for information
+
                 performDeepBackgroundScrape(primaryIdentity, faceId, embedding, socialLinks)
             } else if (referenceImageUrl.isNotEmpty()) {
                 runOnUiThread { appendLog("No online identity correlation found.") }
@@ -239,7 +251,7 @@ class MainActivity : AppCompatActivity() {
             }
 
         } catch (e: CancellationException) {
-            Log.d("MainActivity", "Investigation for ID $trackingId was cancelled because the subject was lost.")
+            Log.d(TAG, "Investigation for ID $trackingId was cancelled because the subject was lost.")
         } catch (e: Exception) {
             runOnUiThread { appendLog("Pipeline Exception: ${e.message}") }
         } finally {
@@ -250,32 +262,29 @@ class MainActivity : AppCompatActivity() {
     private suspend fun performDeepBackgroundScrape(primaryIdentity: String, faceId: String, embedding: FloatArray, socialLinks: List<String>) {
         metaGlassesManager.playAudioMessage("Digging for background data.")
         runOnUiThread { appendLog("Digging for deep background info on: $primaryIdentity...") }
-        
+
         val bgDataJson = JSONObject()
-        
-        // Deep Background Scrapes - SmartBackgroundChecks
+
         val smartData = smartBgScraper.searchBackground(primaryIdentity)
         if (smartData != null) {
             bgDataJson.put("smart", smartData)
             val phonesCount = smartData.optJSONArray("phones")?.length() ?: 0
             if (phonesCount > 0) {
-                 metaGlassesManager.playAudioMessage("Found $phonesCount phone numbers.")
-                 runOnUiThread { appendLog("Extracted phone numbers.") }
+                metaGlassesManager.playAudioMessage("Found $phonesCount phone numbers.")
+                runOnUiThread { appendLog("Extracted phone numbers.") }
             }
         }
-        
-        // Deep Background Scrapes - CyberBackgroundChecks
+
         val cyberData = cyberBgScraper.searchBackground(primaryIdentity)
         if (cyberData != null) {
             bgDataJson.put("cyber", cyberData)
             val emailsCount = cyberData.optJSONArray("emails")?.length() ?: 0
             if (emailsCount > 0) {
-                 metaGlassesManager.playAudioMessage("Found $emailsCount email addresses.")
-                 runOnUiThread { appendLog("Extracted email addresses.") }
+                metaGlassesManager.playAudioMessage("Found $emailsCount email addresses.")
+                runOnUiThread { appendLog("Extracted email addresses.") }
             }
         }
 
-        // Add to Local Cache & Database
         localFaceCache.cacheIdentity(
             faceId = faceId,
             embedding = embedding,
@@ -283,7 +292,7 @@ class MainActivity : AppCompatActivity() {
             socialLinks = socialLinks,
             backgroundData = bgDataJson.toString()
         )
-        
+
         if (bgDataJson.length() > 0) {
             metaGlassesManager.playAudioMessage("Investigation complete. Dossier saved.")
         } else {
@@ -291,17 +300,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun updateUIState(isConnected: Boolean) {
-        binding.tvStatus.text = if (isConnected) getString(R.string.status_connected) else getString(R.string.status_disconnected)
-        binding.btnConnect.isEnabled = !isConnected
-        binding.btnDisconnect.isEnabled = isConnected
-    }
-
     private fun appendLog(message: String) {
         val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
-        val currentLog = binding.tvLog.text.toString()
-        val newLog = "[$time] $message\n$currentLog"
-        binding.tvLog.text = newLog
+        uiState.addLog("[$time] $message")
     }
 
     private fun checkPermissions(): Boolean {
@@ -310,7 +311,7 @@ class MainActivity : AppCompatActivity() {
             Manifest.permission.BLUETOOTH_CONNECT,
             Manifest.permission.INTERNET
         )
-        
+
         val missingPermissions = requiredPermissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
@@ -338,5 +339,55 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
         metaGlassesManager.stopVideoStream()
         metaGlassesManager.disconnect()
+    }
+}
+
+class DoxrayUiState {
+    val logLines: SnapshotStateList<String> = mutableStateListOf()
+    private val _isConnected = mutableStateOf(false)
+    val isConnected get() = _isConnected.value
+    fun setConnected(connected: Boolean) { _isConnected.value = connected }
+    fun addLog(line: String) { logLines.add(0, line) }
+}
+
+@Composable
+fun DoxrayScreen(
+    state: DoxrayUiState,
+    onConnect: () -> Unit,
+    onDisconnect: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        val statusText = if (state.isConnected) "Status: Connected to Glasses" else "Status: Disconnected"
+        Text(
+            text = statusText,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Button(onClick = onConnect, enabled = !state.isConnected) { Text("Connect") }
+            Button(onClick = onDisconnect, enabled = state.isConnected) { Text("Disconnect") }
+        }
+        Spacer(modifier = Modifier.height(24.dp))
+        Text(
+            text = "Recent Activity Log:",
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        val lines = remember { state.logLines }
+        LazyColumn(modifier = Modifier.fillMaxSize()) {
+            items(lines) { line ->
+                Text(
+                    text = line,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 14.sp
+                )
+            }
+        }
     }
 }
