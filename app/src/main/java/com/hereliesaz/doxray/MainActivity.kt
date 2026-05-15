@@ -35,6 +35,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.hereliesaz.doxray.api.CyberBackgroundChecksScraper
 import com.hereliesaz.doxray.api.EmbeddingGenerator
+import com.hereliesaz.doxray.api.FaceCheckIdScraperService
+import com.hereliesaz.doxray.api.FaceCheckIdService
 import com.hereliesaz.doxray.api.FaceSeekScraperService
 import com.hereliesaz.doxray.api.FaceSeekService
 import com.hereliesaz.doxray.api.FaceTrackerManager
@@ -66,11 +68,13 @@ class MainActivity : ComponentActivity() {
     private val faceSeekService = FaceSeekService()
     private val yandexSearchService = YandexSearchService()
     private val lensoSearchService = LensoSearchService()
+    private val faceCheckIdService = FaceCheckIdService()
 
     // Fallback Scraper Services
     private val faceSeekScraper = FaceSeekScraperService()
     private val yandexScraper = YandexScraperService()
     private val lensoScraper = LensoScraperService()
+    private val faceCheckIdScraper = FaceCheckIdScraperService()
 
     // Deep Background Scraper Services
     private val smartBgScraper = SmartBackgroundChecksScraper()
@@ -216,6 +220,18 @@ class MainActivity : ComponentActivity() {
                     runOnUiThread { appendLog("FaceSeek matched! ID: ${faceResult.faceId}") }
                     referenceImageUrl = faceResult.referenceImageUrl
                     faceId = faceResult.faceId
+                } else {
+                    var faceCheckResult = faceCheckIdService.identifyFace(imageBytes)
+                    if (faceCheckResult == null) {
+                        runOnUiThread { appendLog("FaceCheck.ID API failed, trying scraper fallback...") }
+                        faceCheckResult = faceCheckIdScraper.identifyFace(imageBytes)
+                    }
+
+                    if (faceCheckResult != null && faceCheckResult.confidence > 0.6f) {
+                        runOnUiThread { appendLog("FaceCheck.ID matched! ID: ${faceCheckResult.faceId}") }
+                        referenceImageUrl = faceCheckResult.referenceImageUrl
+                        faceId = faceCheckResult.faceId
+                    }
                 }
             }
 
