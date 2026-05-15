@@ -2,6 +2,7 @@ package com.hereliesaz.doxray.api
 
 import android.util.Log
 import com.hereliesaz.doxray.BuildConfig
+import com.hereliesaz.doxray.net.HttpClients
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import retrofit2.Retrofit
@@ -29,6 +30,7 @@ class YandexSearchService {
 
     private val retrofit = Retrofit.Builder()
         .baseUrl("https://serpapi.com/")
+        .client(HttpClients.api())
         .addConverterFactory(GsonConverterFactory.create())
         .build()
 
