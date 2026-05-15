@@ -6,12 +6,13 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 
-@Database(entities = [IdentityRecord::class, Encounter::class], version = 3, exportSchema = false)
+@Database(entities = [IdentityRecord::class, Encounter::class, AuditEvent::class], version = 3, exportSchema = false)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun identityDao(): IdentityDao
     abstract fun encounterDao(): EncounterDao
+    abstract fun auditDao(): AuditDao
 
     companion object {
         @Volatile
