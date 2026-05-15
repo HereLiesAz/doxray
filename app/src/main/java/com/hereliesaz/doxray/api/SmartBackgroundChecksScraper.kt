@@ -40,6 +40,7 @@ class SmartBackgroundChecksScraper {
                 if (!warm.isSuccessful) {
                     Log.w(TAG, "Warmup failed (${warm.code}); search will still be attempted.")
                 }
+                warm.body?.string()  // drain so the connection is pooled and no leak warning fires
             }
 
             // 2. Search.
