@@ -59,12 +59,12 @@ val verPatch = versionProps.getProperty("versionPatch", "0")
 val currentVersionName = "$verMajor.$verMinor.$verPatch"
 android {
     namespace = "com.hereliesaz.doxray"
-    compileSdk = 34
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.hereliesaz.doxray"
         minSdk = 28
-        targetSdk = 34
+        targetSdk = 37
         versionCode = 1
         versionName = "1.0"
 
@@ -88,8 +88,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
     }
     buildFeatures {
         buildConfig = true
@@ -154,7 +156,7 @@ dependencies {
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 
     // Room
-    val roomVersion = "2.6.1"
+    val roomVersion = "2.8.4"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
