@@ -1,15 +1,14 @@
 package com.hereliesaz.doxray.api
 
 import android.util.Log
+import com.hereliesaz.doxray.net.HttpClients
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.jsoup.Jsoup
-import java.util.concurrent.TimeUnit
 
 /**
  * Scraper implementation for FaceSeek.
@@ -20,10 +19,8 @@ class FaceSeekScraperService {
     private val TAG = "FaceSeekScraper"
     private val FACESEEK_URL = "https://faceseek.online"
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .build()
+    // PHASE-0: selectors and endpoint guessed; replaced once captures land.
+    private val client get() = HttpClients.browser()
 
     suspend fun identifyFace(imageBytes: ByteArray): FaceSeekService.Result? = withContext(Dispatchers.IO) {
         Log.d(TAG, "Scraping FaceSeek for frame (${imageBytes.size} bytes)...")

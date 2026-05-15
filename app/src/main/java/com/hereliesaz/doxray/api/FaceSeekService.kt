@@ -2,15 +2,14 @@ package com.hereliesaz.doxray.api
 
 import android.util.Log
 import com.hereliesaz.doxray.BuildConfig
+import com.hereliesaz.doxray.net.HttpClients
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import java.util.concurrent.TimeUnit
 
 /**
  * Actual implementation of FaceSeek API integration.
@@ -21,10 +20,9 @@ class FaceSeekService {
     private val FACESEEK_API_KEY = BuildConfig.FACESEEK_KEY
     private val FACESEEK_HOST = "https://api.faceseek.online"
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .build()
+    // PHASE-0: real FaceSeek flow unknown; CaptureInterceptor will record
+    // production traffic so we can rewrite this against captures.
+    private val client get() = HttpClients.api()
 
     /**
      * Uploads a frame to FaceSeek using multipart/form-data.
