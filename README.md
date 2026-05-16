@@ -21,9 +21,14 @@ SERPAPI_KEY=<your-serpapi-key>
 FACESEEK_KEY=<your-faceseek-key>
 LENSO_KEY=<your-lenso-key>
 FACECHECK_KEY=<your-facecheck-key>
+PIMEYES_KEY=<your-pimeyes-bearer-token>
+TINEYE_KEY=<your-tineye-public-key>
+TINEYE_SECRET=<your-tineye-private-key>
 ```
 
 Any missing key causes that service to skip the API path and fall back to the scraper.
+
+Google Lens has no official API key — the scraper handles all Google Lens queries.
 
 ### Meta Wearables DAT SDK (closed beta)
 The real `com.facebook.wearables:dat-android` artifact is published to a private GitHub Packages repo. To use it instead of the local stub fallback, add the following to `local.properties`:
