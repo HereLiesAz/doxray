@@ -12,4 +12,7 @@ interface AuditDao {
 
     @Query("SELECT * FROM audit_events ORDER BY timestamp DESC LIMIT :limit")
     fun observeRecent(limit: Int = 200): Flow<List<AuditEvent>>
+
+    @Query("SELECT * FROM audit_events ORDER BY timestamp ASC")
+    suspend fun getAll(): List<AuditEvent>
 }
