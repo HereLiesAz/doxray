@@ -18,6 +18,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.BottomSheetScaffold
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -35,20 +37,49 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.hereliesaz.doxray.db.Encounter
+import com.hereliesaz.doxray.db.IdentityRecord
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DossierDetailScreen(viewModel: DossierDetailViewModel, onDeleted: () -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var confirmingDelete by remember { mutableStateOf(false) }
     val identity = state.identity
 
     if (identity == null) {
         Text(text = "Dossier not found.", modifier = Modifier.padding(16.dp))
         return
     }
+
+    val geoEncounters = state.encounters.filter { it.latitude != null && it.longitude != null }
+    if (geoEncounters.isEmpty()) {
+        DossierContent(viewModel = viewModel, state = state, identity = identity, onDeleted = onDeleted)
+    } else {
+        BottomSheetScaffold(
+            sheetPeekHeight = 120.dp,
+            sheetContent = {
+                DossierContent(viewModel = viewModel, state = state, identity = identity, onDeleted = onDeleted)
+            },
+            content = { padding ->
+                EncounterMap(
+                    encounters = geoEncounters,
+                    modifier = Modifier.fillMaxSize().padding(padding),
+                )
+            },
+        )
+    }
+}
+
+@Composable
+private fun DossierContent(
+    viewModel: DossierDetailViewModel,
+    state: DossierDetailUiState,
+    identity: IdentityRecord,
+    onDeleted: () -> Unit,
+) {
+    var confirmingDelete by remember { mutableStateOf(false) }
 
     LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         item {
