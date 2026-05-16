@@ -15,7 +15,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
@@ -38,6 +37,7 @@ fun LiveScreen(viewModel: LiveViewModel) {
             onDisconnect = { viewModel.disconnect() },
         )
         InputMode.PHONE -> PhoneLiveSurface(
+            previewUseCase = viewModel.previewUseCase(),
             logLines = state.logLines,
             match = match,
             onFlip = { viewModel.flipPhoneCamera() },
@@ -78,17 +78,16 @@ private fun MetaLiveSurface(
 
 @Composable
 private fun PhoneLiveSurface(
+    previewUseCase: androidx.camera.core.Preview?,
     logLines: List<String>,
     match: MatchEvent?,
     onFlip: () -> Unit,
 ) {
-    // Layered surface: camera preview (Task 8), anchor PiP overlay + log gradient
-    // + flip button (Task 9). For now, a placeholder so the mode branch compiles.
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        Text(
-            text = "Phone camera mode (preview not yet wired)",
-            color = Color.White,
-            modifier = Modifier.align(Alignment.Center),
+        CameraPreview(
+            previewUseCase = previewUseCase,
+            modifier = Modifier.fillMaxSize(),
         )
+        // Anchor PiP + log gradient + flip button: Task 9.
     }
 }
