@@ -31,6 +31,8 @@ import com.hereliesaz.doxray.ui.live.LiveViewModel
 
 @Composable
 fun DoxrayNavRail(
+    inputMode: com.hereliesaz.doxray.ui.live.InputMode = com.hereliesaz.doxray.ui.live.InputMode.META,
+    onSwapInputClicked: () -> Unit = {},
     onExportClicked: () -> Unit = {},
     onImportClicked: () -> Unit = {},
 ) {
@@ -49,6 +51,11 @@ fun DoxrayNavRail(
         azRailItem(id = "live", text = "Live", route = Destinations.LIVE)
         azRailItem(id = "dossiers", text = "Dossiers", route = Destinations.DOSSIERS)
         azRailItem(id = "audit", text = "Audit", route = Destinations.AUDIT)
+        azRailItem(
+            id = "input-mode",
+            text = if (inputMode == com.hereliesaz.doxray.ui.live.InputMode.META) "Camera" else "Glasses",
+            route = "swap-input",
+        )
         azMenuItem(id = "export-db", text = "Export DB", route = "export-db", onClick = onExportClicked)
         azMenuItem(id = "import-db", text = "Import DB", route = "import-db", onClick = onImportClicked)
 
@@ -98,6 +105,12 @@ fun DoxrayNavRail(
                         },
                     )
                     AuditLogScreen(viewModel = vm)
+                }
+                composable("swap-input") {
+                    androidx.compose.runtime.LaunchedEffect(Unit) {
+                        onSwapInputClicked()
+                        navController.popBackStack()
+                    }
                 }
             }
         }
