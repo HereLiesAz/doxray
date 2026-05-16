@@ -12,6 +12,7 @@ import com.hereliesaz.doxray.api.FaceCheckIdService
 import com.hereliesaz.doxray.api.FaceSeekScraperService
 import com.hereliesaz.doxray.api.FaceSeekService
 import com.hereliesaz.doxray.api.FaceTrackerManager
+import com.hereliesaz.doxray.api.GitHubProbeService
 import com.hereliesaz.doxray.api.GoogleLensScraperService
 import com.hereliesaz.doxray.api.GoogleLensSearchService
 import com.hereliesaz.doxray.api.LensoScraperService
@@ -19,9 +20,11 @@ import com.hereliesaz.doxray.api.LensoSearchService
 import com.hereliesaz.doxray.api.LocalFaceCache
 import com.hereliesaz.doxray.api.PimEyesScraperService
 import com.hereliesaz.doxray.api.PimEyesService
+import com.hereliesaz.doxray.api.SerpApiSiteSearchService
 import com.hereliesaz.doxray.api.SmartBackgroundChecksScraper
 import com.hereliesaz.doxray.api.TinEyeScraperService
 import com.hereliesaz.doxray.api.TinEyeSearchService
+import com.hereliesaz.doxray.api.WaybackMachineService
 import com.hereliesaz.doxray.api.YandexScraperService
 import com.hereliesaz.doxray.api.YandexSearchService
 import com.hereliesaz.doxray.audit.AuditLogger
@@ -66,6 +69,9 @@ class LiveViewModel(application: Application) : AndroidViewModel(application) {
 
     private val smartBgScraper = SmartBackgroundChecksScraper()
     private val cyberBgScraper = CyberBackgroundChecksScraper()
+    private val serpApiSiteSearch = SerpApiSiteSearchService()
+    private val gitHubProbe = GitHubProbeService()
+    private val waybackMachine = WaybackMachineService()
     private val identifyPipeline = IdentifyPipeline(
         lensoService = LensoSearchService(),
         lensoScraper = LensoScraperService(),
@@ -257,6 +263,7 @@ class LiveViewModel(application: Application) : AndroidViewModel(application) {
         metaGlassesManager.playAudioMessage("Digging for background data.")
         appendLog("Digging for deep background info on: $primaryIdentity...")
         val bgDataJson = JSONObject()
+
         val smartData = smartBgScraper.searchBackground(primaryIdentity)
         if (smartData != null) {
             bgDataJson.put("smart", smartData)
@@ -275,11 +282,33 @@ class LiveViewModel(application: Application) : AndroidViewModel(application) {
                 appendLog("Extracted email addresses.")
             }
         }
+
+        // OSINT enrichment — parallel fan-out
+        coroutineScope {
+            val serpJob = async { serpApiSiteSearch.search(primaryIdentity) }
+            val ghJob = async { gitHubProbe.probe(primaryIdentity) }
+            val wbJob = async { waybackMachine.snapshotAll(socialLinks) }
+
+            serpJob.await()?.let {
+                bgDataJson.put("osint_serpapi", it.toJson())
+                appendLog("SerpAPI: LinkedIn=${it.linkedIn.size} Twitter=${it.twitter.size} IG=${it.instagram.size}")
+            }
+            ghJob.await()?.let {
+                bgDataJson.put("osint_github", it.toJson())
+                if (it.profiles.isNotEmpty()) appendLog("GitHub: ${it.profiles.size} profile(s) found")
+            }
+            wbJob.await()?.let {
+                bgDataJson.put("osint_wayback", it.toJson())
+                if (it.snapshots.isNotEmpty()) appendLog("Wayback: ${it.snapshots.size} snapshot(s)")
+            }
+        }
+
         localFaceCache.cacheIdentity(
             faceId = faceId, embedding = embedding,
             primaryIdentity = primaryIdentity, socialLinks = socialLinks,
             backgroundData = bgDataJson.toString(),
         )
+
         if (bgDataJson.length() > 0) {
             metaGlassesManager.playAudioMessage("Investigation complete. Dossier saved.")
         } else {
