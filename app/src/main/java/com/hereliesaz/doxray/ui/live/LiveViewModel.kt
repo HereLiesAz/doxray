@@ -1,6 +1,7 @@
 package com.hereliesaz.doxray.ui.live
 
 import android.app.Application
+import android.graphics.BitmapFactory
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -21,11 +22,14 @@ import com.hereliesaz.doxray.audit.AuditLogger
 import com.hereliesaz.doxray.db.AppDatabase
 import com.hereliesaz.doxray.location.LocationService
 import com.hereliesaz.doxray.meta.MetaGlassesManager
+import com.hereliesaz.doxray.quality.FaceQualityScorer
+import com.hereliesaz.doxray.quality.QualityResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -145,6 +149,35 @@ class LiveViewModel(application: Application) : AndroidViewModel(application) {
         eulerZ: Float,
     ) {
         try {
+            // [GATE 2] Face quality
+            val cropBitmap = BitmapFactory.decodeByteArray(faceCrop, 0, faceCrop.size)
+            val frameBitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+            if (cropBitmap == null || frameBitmap == null) {
+                appendLog("Quality gate: bitmap decode failed for ID $trackingId; skipping.")
+                return
+            }
+            val faceFrac = (cropBitmap.width.toFloat() * cropBitmap.height) /
+                (frameBitmap.width.toFloat() * frameBitmap.height)
+            val quality = FaceQualityScorer.scoreFromBitmap(
+                bitmap = cropBitmap,
+                faceFraction = faceFrac,
+                eulerX = eulerX,
+                eulerY = eulerY,
+                eulerZ = eulerZ,
+            )
+            if (quality is QualityResult.Fail) {
+                appendLog("Low-quality crop (ID: $trackingId): ${quality.reasons.joinToString(", ")}")
+                AuditLogger.log(
+                    AuditLogger.Type.REJECTED,
+                    summary = "Low-quality crop skipped",
+                    details = JSONObject().apply {
+                        put("reason", "quality")
+                        put("trackingId", trackingId)
+                        put("failures", JSONArray(quality.reasons))
+                    },
+                )
+                return
+            }
             val embedding = embeddingGenerator.generateEmbedding(faceCrop)
             val cachedMatch = localFaceCache.findMatch(embedding)
             if (cachedMatch != null) {
