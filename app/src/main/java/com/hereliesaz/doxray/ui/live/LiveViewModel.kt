@@ -6,6 +6,7 @@ import android.graphics.Rect
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.hereliesaz.doxray.api.AnchorImageRepository
 import com.hereliesaz.doxray.api.CyberBackgroundChecksScraper
 import com.hereliesaz.doxray.api.EmbeddingGenerator
 import com.hereliesaz.doxray.api.FaceCheckIdScraperService
@@ -36,6 +37,7 @@ import com.hereliesaz.doxray.location.LocationService
 import com.hereliesaz.doxray.meta.MetaGlassesManager
 import com.hereliesaz.doxray.quality.FaceQualityScorer
 import com.hereliesaz.doxray.quality.QualityResult
+import kotlin.math.abs
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -69,6 +71,7 @@ class LiveViewModel(application: Application) : AndroidViewModel(application) {
         encounterDao = appDatabase.encounterDao(),
         locationService = LocationService(application),
     )
+    private val anchorImageRepository = AnchorImageRepository(appDatabase.anchorImageDao())
 
     private val smartBgScraper = SmartBackgroundChecksScraper()
     private val cyberBgScraper = CyberBackgroundChecksScraper()
@@ -207,6 +210,7 @@ class LiveViewModel(application: Application) : AndroidViewModel(application) {
                 )
                 return
             }
+            val anchorScore = faceFrac * (1f - (abs(eulerY) / 90f).coerceAtMost(1f))
             val embedding = embeddingGenerator.generateEmbedding(faceCrop)
             val ocrResult = ocrService.extract(imageBytes, faceBbox)
             if (ocrResult != null) {
@@ -214,12 +218,13 @@ class LiveViewModel(application: Application) : AndroidViewModel(application) {
             }
             val cachedMatch = localFaceCache.findMatch(embedding)
             if (cachedMatch != null) {
+                anchorImageRepository.upsert(cachedMatch.faceId, faceCrop, anchorScore)
                 appendLog("Cached Match: ${cachedMatch.primaryIdentity}. Encounters: ${cachedMatch.encounterCount}.")
                 appendLog("Known Links: ${cachedMatch.socialLinks}")
                 metaGlassesManager.playAudioMessage("Match found: ${cachedMatch.primaryIdentity}. Previous encounters: ${cachedMatch.encounterCount}")
                 if (cachedMatch.backgroundData == "{}" || cachedMatch.backgroundData.isEmpty()) {
                     metaGlassesManager.playAudioMessage("Resuming background investigation.")
-                    performDeepBackgroundScrape(cachedMatch.primaryIdentity, cachedMatch.faceId, embedding, cachedMatch.socialLinks.split(","), ocrResult)
+                    performDeepBackgroundScrape(cachedMatch.primaryIdentity, cachedMatch.faceId, embedding, cachedMatch.socialLinks.split(","), ocrResult, faceCrop, anchorScore)
                 }
                 return
             }
@@ -252,7 +257,7 @@ class LiveViewModel(application: Application) : AndroidViewModel(application) {
                 appendLog("Identity correlated: $primaryIdentity")
                 appendLog("Links: ${socialLinks.joinToString(", ")}")
                 metaGlassesManager.playAudioMessage("Identity correlated: $primaryIdentity")
-                performDeepBackgroundScrape(primaryIdentity, faceId, embedding, socialLinks, ocrResult)
+                performDeepBackgroundScrape(primaryIdentity, faceId, embedding, socialLinks, ocrResult, faceCrop, anchorScore)
             } else {
                 appendLog("No online identity correlation found.")
                 metaGlassesManager.playAudioMessage("No online identity found.")
@@ -269,6 +274,7 @@ class LiveViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun performDeepBackgroundScrape(
         primaryIdentity: String, faceId: String, embedding: FloatArray, socialLinks: List<String>,
         ocrResult: OcrService.OcrResult?,
+        faceCrop: ByteArray, anchorScore: Float,
     ) {
         metaGlassesManager.playAudioMessage("Digging for background data.")
         appendLog("Digging for deep background info on: $primaryIdentity...")
@@ -322,6 +328,7 @@ class LiveViewModel(application: Application) : AndroidViewModel(application) {
             backgroundData = bgDataJson.toString(),
             visibleText = ocrResult?.primaryLine,
         )
+        anchorImageRepository.upsert(faceId, faceCrop, anchorScore)
 
         if (bgDataJson.length() > 0) {
             metaGlassesManager.playAudioMessage("Investigation complete. Dossier saved.")
