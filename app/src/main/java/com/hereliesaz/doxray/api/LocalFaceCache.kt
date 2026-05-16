@@ -24,6 +24,7 @@ class LocalFaceCache(
     private val TAG = "LocalFaceCache"
     private val memoryCache = mutableListOf<IdentityRecord>()
     private val SIMILARITY_THRESHOLD = 0.85f
+    private val CLUSTER_THRESHOLD = 0.92f
 
     suspend fun loadFromDatabase() = withContext(Dispatchers.IO) {
         val records = identityDao.getAllIdentities()
@@ -68,6 +69,20 @@ class LocalFaceCache(
         bestMatch
     }
 
+    suspend fun findClusterMatch(embedding: FloatArray): IdentityRecord? = withContext(Dispatchers.IO) {
+        if (memoryCache.isEmpty()) return@withContext null
+        var bestMatch: IdentityRecord? = null
+        var highestSimilarity = 0f
+        for (cached in memoryCache) {
+            val similarity = calculateCosineSimilarity(embedding, cached.embedding)
+            if (similarity > highestSimilarity && similarity >= CLUSTER_THRESHOLD) {
+                highestSimilarity = similarity
+                bestMatch = cached
+            }
+        }
+        bestMatch
+    }
+
     suspend fun cacheIdentity(
         faceId: String,
         embedding: FloatArray,
@@ -75,6 +90,33 @@ class LocalFaceCache(
         socialLinks: List<String>,
         backgroundData: String,
     ) = withContext(Dispatchers.IO) {
+        // Re-id cluster check: if a near-duplicate dossier already exists,
+        // record the encounter against it instead of spawning a new one.
+        val cluster = findClusterMatch(embedding)
+        if (cluster != null) {
+            val now = System.currentTimeMillis()
+            identityDao.recordEncounter(cluster.faceId, now)
+            AuditLogger.log(
+                AuditLogger.Type.IDENTIFY,
+                summary = "Merged into existing dossier: ${cluster.primaryIdentity}",
+                details = JSONObject().apply {
+                    put("existingFaceId", cluster.faceId)
+                    put("incomingFaceId", faceId)
+                    put("primaryIdentity", primaryIdentity)
+                },
+            )
+            recordEncounter(cluster.faceId, now)
+            val index = memoryCache.indexOf(cluster)
+            if (index != -1) {
+                memoryCache[index] = cluster.copy(
+                    lastSeenTimestamp = now,
+                    encounterCount = cluster.encounterCount + 1,
+                )
+            }
+            return@withContext
+        }
+
+        // Existing insert path — unchanged from before this task.
         Log.d(TAG, "Caching new identity: $primaryIdentity")
         val currentTime = System.currentTimeMillis()
         val record = IdentityRecord(
