@@ -49,7 +49,15 @@ fun DossierDetailScreen(viewModel: DossierDetailViewModel, onDeleted: () -> Unit
             ) {
                 Column {
                     Text(text = identity.primaryIdentity, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                    Text(text = "${identity.encounterCount} encounter(s)", fontSize = 14.sp)
+                    val isReencountered = identity.lastSeenTimestamp - identity.firstSeenTimestamp > 24 * 60 * 60 * 1000L
+                    val encounterLine = if (isReencountered)
+                        "${identity.encounterCount} encounter(s) — re-encountered"
+                    else
+                        "${identity.encounterCount} encounter(s)"
+                    Text(text = encounterLine, fontSize = 14.sp)
+                    identity.visibleText?.takeIf { it.isNotBlank() }?.let { vt ->
+                        Text(text = "Visible text: \"$vt\"", fontSize = 13.sp)
+                    }
                     Text(
                         text = "First seen: " + formatAbsolute(identity.firstSeenTimestamp),
                         fontSize = 12.sp,
