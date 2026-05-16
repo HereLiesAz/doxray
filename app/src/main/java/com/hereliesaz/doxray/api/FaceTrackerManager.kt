@@ -8,12 +8,13 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.face.Face
 import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetectorOptions
+import com.hereliesaz.doxray.audit.AuditLogger
+import com.hereliesaz.doxray.quality.FaceSample
+import com.hereliesaz.doxray.quality.LivenessHeuristic
+import com.hereliesaz.doxray.quality.LivenessResult
+import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 
-/**
- * Uses Google ML Kit to detect and track faces over time.
- * Initiates the search pipeline only if focus on a person is maintained for 5 seconds.
- */
 class FaceTrackerManager {
 
     private val TAG = "FaceTrackerManager"
@@ -21,19 +22,27 @@ class FaceTrackerManager {
     private val options = FaceDetectorOptions.Builder()
         .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
         .enableTracking()
+        .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL)
         .build()
 
     private val detector = FaceDetection.getClient(options)
 
-    // Maps ML Kit tracking IDs to the timestamp they were first seen
     private val trackedFaces = mutableMapOf<Int, Long>()
-    // Tracks IDs that have already triggered a search to avoid redundant calls
     private val searchedFaces = mutableSetOf<Int>()
+    private val samples = mutableMapOf<Int, MutableList<FaceSample>>()
 
     private val FOCUS_THRESHOLD_MS = 5000L
+    private val MAX_SAMPLES_PER_TRACK = 30  // 5s at ~6fps; bound memory
 
     interface FaceFocusListener {
-        fun onFaceFocused(imageBytes: ByteArray, trackingId: Int, faceCrop: ByteArray)
+        fun onFaceFocused(
+            imageBytes: ByteArray,
+            trackingId: Int,
+            faceCrop: ByteArray,
+            eulerX: Float,
+            eulerY: Float,
+            eulerZ: Float,
+        )
         fun onFaceLost(trackingId: Int)
         fun onError(e: Exception)
     }
@@ -46,27 +55,64 @@ class FaceTrackerManager {
             detector.process(image)
                 .addOnSuccessListener { faces ->
                     val currentIds = mutableSetOf<Int>()
+                    val now = System.currentTimeMillis()
 
                     for (face in faces) {
                         val trackingId = face.trackingId ?: continue
                         currentIds.add(trackingId)
 
+                        // Record this frame as a sample regardless of search state
+                        val sample = FaceSample(
+                            leftEyeOpen = face.leftEyeOpenProbability ?: -1f,
+                            rightEyeOpen = face.rightEyeOpenProbability ?: -1f,
+                            smiling = face.smilingProbability ?: -1f,
+                            eulerX = face.headEulerAngleX,
+                            eulerY = face.headEulerAngleY,
+                            eulerZ = face.headEulerAngleZ,
+                            timestampMs = now,
+                        )
+                        val list = samples.getOrPut(trackingId) { mutableListOf() }
+                        list.add(sample)
+                        if (list.size > MAX_SAMPLES_PER_TRACK) list.removeAt(0)
+
                         if (searchedFaces.contains(trackingId)) continue
 
                         val firstSeen = trackedFaces[trackingId]
-                        val currentTime = System.currentTimeMillis()
-
                         if (firstSeen == null) {
-                            trackedFaces[trackingId] = currentTime
+                            trackedFaces[trackingId] = now
                             Log.d(TAG, "New face detected (ID: $trackingId). Starting 5-second focus timer.")
                         } else {
-                            val duration = currentTime - firstSeen
+                            val duration = now - firstSeen
                             if (duration >= FOCUS_THRESHOLD_MS) {
-                                Log.d(TAG, "Focus maintained on face (ID: $trackingId) for 5 seconds. Initiating search.")
                                 searchedFaces.add(trackingId)
 
+                                // [GATE 1] Liveness
+                                val liveness = LivenessHeuristic.evaluate(samples[trackingId].orEmpty())
+                                if (liveness is LivenessResult.Fail) {
+                                    Log.d(TAG, "Liveness FAIL for ID $trackingId: ${liveness.reasonDetails}")
+                                    AuditLogger.log(
+                                        AuditLogger.Type.REJECTED,
+                                        summary = "Liveness failed for tracked face $trackingId",
+                                        details = JSONObject().apply {
+                                            put("reason", "liveness")
+                                            put("trackingId", trackingId)
+                                            put("sampleCount", samples[trackingId]?.size ?: 0)
+                                            put("breakdown", liveness.reasonDetails)
+                                        },
+                                    )
+                                    continue
+                                }
+                                Log.d(TAG, "Liveness PASS for ID $trackingId. Cropping + dispatching.")
+
                                 val faceCropBytes = cropFace(bitmap, face) ?: imageBytes
-                                listener.onFaceFocused(imageBytes, trackingId, faceCropBytes)
+                                listener.onFaceFocused(
+                                    imageBytes = imageBytes,
+                                    trackingId = trackingId,
+                                    faceCrop = faceCropBytes,
+                                    eulerX = face.headEulerAngleX,
+                                    eulerY = face.headEulerAngleY,
+                                    eulerZ = face.headEulerAngleZ,
+                                )
                             }
                         }
                     }
@@ -75,6 +121,7 @@ class FaceTrackerManager {
                     for (id in removedIds) {
                         trackedFaces.remove(id)
                         searchedFaces.remove(id)
+                        samples.remove(id)
                         listener.onFaceLost(id)
                     }
                 }
@@ -94,10 +141,9 @@ class FaceTrackerManager {
                 bbox.left.coerceIn(0, source.width),
                 bbox.top.coerceIn(0, source.height),
                 bbox.right.coerceIn(0, source.width),
-                bbox.bottom.coerceIn(0, source.height)
+                bbox.bottom.coerceIn(0, source.height),
             )
             if (clamped.width() <= 0 || clamped.height() <= 0) return null
-
             val cropped = Bitmap.createBitmap(source, clamped.left, clamped.top, clamped.width(), clamped.height())
             val stream = ByteArrayOutputStream()
             cropped.compress(Bitmap.CompressFormat.JPEG, 90, stream)

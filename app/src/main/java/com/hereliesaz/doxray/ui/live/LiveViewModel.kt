@@ -82,11 +82,18 @@ class LiveViewModel(application: Application) : AndroidViewModel(application) {
             metaGlassesManager.startVideoStream(object : MetaGlassesManager.FrameListener {
                 override fun onFrameReceived(imageBytes: ByteArray) {
                     faceTrackerManager.processFrame(imageBytes, object : FaceTrackerManager.FaceFocusListener {
-                        override fun onFaceFocused(focusedImageBytes: ByteArray, trackingId: Int, faceCrop: ByteArray) {
+                        override fun onFaceFocused(
+                            imageBytes: ByteArray,
+                            trackingId: Int,
+                            faceCrop: ByteArray,
+                            eulerX: Float,
+                            eulerY: Float,
+                            eulerZ: Float,
+                        ) {
                             if (activeInvestigations.containsKey(trackingId)) return
                             appendLog("Target acquired (ID: $trackingId). Processing search...")
                             val job = viewModelScope.launch {
-                                processFocusedFace(focusedImageBytes, faceCrop, trackingId)
+                                processFocusedFace(imageBytes, faceCrop, trackingId, eulerX, eulerY, eulerZ)
                             }
                             activeInvestigations[trackingId] = job
                         }
@@ -129,7 +136,14 @@ class LiveViewModel(application: Application) : AndroidViewModel(application) {
         metaGlassesManager.disconnect()
     }
 
-    private suspend fun processFocusedFace(imageBytes: ByteArray, faceCrop: ByteArray, trackingId: Int) {
+    private suspend fun processFocusedFace(
+        imageBytes: ByteArray,
+        faceCrop: ByteArray,
+        trackingId: Int,
+        eulerX: Float,
+        eulerY: Float,
+        eulerZ: Float,
+    ) {
         try {
             val embedding = embeddingGenerator.generateEmbedding(faceCrop)
             val cachedMatch = localFaceCache.findMatch(embedding)
