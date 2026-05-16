@@ -61,7 +61,11 @@ class FaceTrackerManager {
                         val trackingId = face.trackingId ?: continue
                         currentIds.add(trackingId)
 
-                        // Record this frame as a sample regardless of search state
+                        // Once a face is in searchedFaces (passed or failed liveness),
+                        // it's done — no need to keep building samples for it.
+                        if (searchedFaces.contains(trackingId)) continue
+
+                        // Record this frame as a sample for liveness evaluation
                         val sample = FaceSample(
                             leftEyeOpen = face.leftEyeOpenProbability ?: -1f,
                             rightEyeOpen = face.rightEyeOpenProbability ?: -1f,
@@ -74,8 +78,6 @@ class FaceTrackerManager {
                         val list = samples.getOrPut(trackingId) { mutableListOf() }
                         list.add(sample)
                         if (list.size > MAX_SAMPLES_PER_TRACK) list.removeAt(0)
-
-                        if (searchedFaces.contains(trackingId)) continue
 
                         val firstSeen = trackedFaces[trackingId]
                         if (firstSeen == null) {
