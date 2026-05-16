@@ -6,13 +6,14 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 
-@Database(entities = [IdentityRecord::class, Encounter::class, AuditEvent::class], version = 4, exportSchema = true)
+@Database(entities = [IdentityRecord::class, Encounter::class, AuditEvent::class, AnchorImage::class], version = 5, exportSchema = true)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun identityDao(): IdentityDao
     abstract fun encounterDao(): EncounterDao
     abstract fun auditDao(): AuditDao
+    abstract fun anchorImageDao(): AnchorImageDao
 
     companion object {
         @Volatile
@@ -25,7 +26,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "doxray_database"
                 )
-                .addMigrations(Migration_2_3, Migration_3_4)
+                .addMigrations(Migration_2_3, Migration_3_4, Migration_4_5)
                 .build()
                 INSTANCE = instance
                 instance
