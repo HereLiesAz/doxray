@@ -18,12 +18,14 @@ data class DossierDetailUiState(
     val encounters: List<Encounter> = emptyList(),
     val socialLinks: List<String> = emptyList(),
     val backgroundData: JSONObject = JSONObject(),
+    val anchorBytes: ByteArray? = null,
 )
 
 class DossierDetailViewModel(
     private val faceId: String,
     private val identityDao: IdentityDao,
     private val encounterDao: EncounterDao,
+    private val anchorImageDao: com.hereliesaz.doxray.db.AnchorImageDao,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(DossierDetailUiState())
@@ -44,10 +46,12 @@ class DossierDetailViewModel(
                 ?: emptyList()
             val backgroundData = runCatching { JSONObject(identity?.backgroundData ?: "{}") }
                 .getOrElse { JSONObject() }
+            val anchor = anchorImageDao.getByFaceId(faceId)?.imageBytes
             _state.value = _state.value.copy(
                 identity = identity,
                 socialLinks = socialLinks,
                 backgroundData = backgroundData,
+                anchorBytes = anchor,
             )
         }
         viewModelScope.launch {

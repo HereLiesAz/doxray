@@ -92,6 +92,7 @@ fun DoxrayNavRail(
                                     faceId = faceId,
                                     identityDao = db.identityDao(),
                                     encounterDao = db.encounterDao(),
+                                    anchorImageDao = db.anchorImageDao(),
                                 )
                             }
                         },
