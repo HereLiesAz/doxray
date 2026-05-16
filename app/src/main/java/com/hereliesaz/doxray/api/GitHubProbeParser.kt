@@ -4,17 +4,10 @@ import org.jsoup.Jsoup
 
 object GitHubProbeParser {
 
-    data class Profile(
-        val username: String,
-        val bio: String,
-        val followers: Int,
-        val publicRepos: Int,
-    )
-
-    fun parse(html: String, username: String): Profile? {
+    fun parse(html: String, username: String): GitHubProbeService.Profile? {
         if (html.isBlank()) return null
         val document = Jsoup.parse(html)
-        val nameElement = document.selectFirst(".p-name") ?: return null
+        document.selectFirst(".p-name") ?: return null
 
         val bio = document.selectFirst(".user-profile-bio")?.text().orEmpty()
         val followers = document
@@ -24,7 +17,7 @@ object GitHubProbeParser {
             .selectFirst("a[href\$=tab=repositories] span.Counter, a[href\$=tab=repositories] .text-bold")
             ?.text()?.replace(",", "")?.toIntOrNull() ?: 0
 
-        return Profile(
+        return GitHubProbeService.Profile(
             username = username,
             bio = bio.trim(),
             followers = followers,
