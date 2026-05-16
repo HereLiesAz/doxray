@@ -8,21 +8,6 @@ import okhttp3.Request
 import org.jsoup.Jsoup
 import java.net.URLEncoder
 
-/** Phase 3 placeholder — Task 8 moves this into GoogleLensSearchService.Result. */
-data class GoogleLensScrapedResult(
-    val identities: List<String>,
-    val socialLinks: List<String>,
-)
-
-/**
- * Unofficial Google Lens scraper via lens.google.com/uploadbyurl. The Lens
- * frontend changes frequently — selectors are guessed from the current page
- * structure. Pure-HTML parsing is split into [extractFromHtml] so tests can
- * exercise the parser without network I/O.
- *
- * PHASE-3: selectors are best-effort. Refine after CaptureInterceptor produces
- * real result HTML.
- */
 class GoogleLensScraperService {
 
     private val TAG = "GoogleLensScraper"
@@ -30,7 +15,7 @@ class GoogleLensScraperService {
 
     private val client get() = HttpClients.browser()
 
-    suspend fun searchIdentity(imageUrl: String): GoogleLensScrapedResult? = withContext(Dispatchers.IO) {
+    suspend fun searchIdentity(imageUrl: String): GoogleLensSearchService.Result? = withContext(Dispatchers.IO) {
         try {
             val encoded = URLEncoder.encode(imageUrl, "UTF-8")
             val request = Request.Builder()
@@ -53,11 +38,7 @@ class GoogleLensScraperService {
     }
 
     companion object {
-        /**
-         * Pure HTML → Result conversion. Public so tests can exercise it
-         * without network I/O. Returns null when no result anchors are found.
-         */
-        fun extractFromHtml(html: String): GoogleLensScrapedResult? {
+        fun extractFromHtml(html: String): GoogleLensSearchService.Result? {
             val document = Jsoup.parse(html)
             val anchors = document.select(".result a.result-link[href]")
             if (anchors.isEmpty()) return null
@@ -70,7 +51,7 @@ class GoogleLensScraperService {
                 if (title.isNotBlank()) identities.add(title)
             }
             if (identities.isEmpty() && urls.isEmpty()) return null
-            return GoogleLensScrapedResult(
+            return GoogleLensSearchService.Result(
                 identities = identities.distinct(),
                 socialLinks = urls.distinct(),
             )
