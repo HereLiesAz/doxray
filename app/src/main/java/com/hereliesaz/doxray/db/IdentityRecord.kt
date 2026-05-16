@@ -13,7 +13,8 @@ data class IdentityRecord(
     val backgroundData: String, // Stored as JSON (Phones, Addresses, Relatives, etc.)
     val firstSeenTimestamp: Long,
     val lastSeenTimestamp: Long,
-    val encounterCount: Int
+    val encounterCount: Int,
+    val visibleText: String? = null,
 ) {
     // Generated equals and hashCode to handle FloatArray properly
     override fun equals(other: Any?): Boolean {
@@ -30,6 +31,7 @@ data class IdentityRecord(
         if (firstSeenTimestamp != other.firstSeenTimestamp) return false
         if (lastSeenTimestamp != other.lastSeenTimestamp) return false
         if (encounterCount != other.encounterCount) return false
+        if (visibleText != other.visibleText) return false
 
         return true
     }
@@ -43,6 +45,7 @@ data class IdentityRecord(
         result = 31 * result + firstSeenTimestamp.hashCode()
         result = 31 * result + lastSeenTimestamp.hashCode()
         result = 31 * result + encounterCount
+        result = 31 * result + (visibleText?.hashCode() ?: 0)
         return result
     }
 }

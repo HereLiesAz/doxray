@@ -6,7 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 
-@Database(entities = [IdentityRecord::class, Encounter::class, AuditEvent::class], version = 3, exportSchema = true)
+@Database(entities = [IdentityRecord::class, Encounter::class, AuditEvent::class], version = 4, exportSchema = true)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
 
@@ -25,7 +25,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "doxray_database"
                 )
-                .addMigrations(Migration_2_3)
+                .addMigrations(Migration_2_3, Migration_3_4)
                 .build()
                 INSTANCE = instance
                 instance
