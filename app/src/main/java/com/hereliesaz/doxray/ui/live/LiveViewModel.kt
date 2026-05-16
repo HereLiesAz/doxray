@@ -1,9 +1,12 @@
 package com.hereliesaz.doxray.ui.live
 
+import android.Manifest
 import android.app.Application
+import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.graphics.Rect
 import android.util.Log
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.hereliesaz.doxray.api.AnchorImageRepository
@@ -31,6 +34,9 @@ import com.hereliesaz.doxray.api.WaybackMachineService
 import com.hereliesaz.doxray.api.YandexScraperService
 import com.hereliesaz.doxray.api.YandexSearchService
 import com.hereliesaz.doxray.audit.AuditLogger
+import com.hereliesaz.doxray.camera.FrameSource
+import com.hereliesaz.doxray.camera.MetaFrameSource
+import com.hereliesaz.doxray.camera.PhoneFrameSource
 import com.hereliesaz.doxray.db.AppDatabase
 import com.hereliesaz.doxray.identify.IdentifyPipeline
 import com.hereliesaz.doxray.location.LocationService
@@ -43,8 +49,13 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -58,7 +69,38 @@ data class LiveUiState(
     val logLines: List<String> = emptyList(),
 )
 
-class LiveViewModel(application: Application) : AndroidViewModel(application) {
+enum class InputMode { META, PHONE }
+
+data class MatchEvent(
+    val identityName: String,
+    val anchorImageBytes: ByteArray?,
+    val firedAtMs: Long,
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+        other as MatchEvent
+        if (identityName != other.identityName) return false
+        if (anchorImageBytes != null) {
+            if (other.anchorImageBytes == null) return false
+            if (!anchorImageBytes.contentEquals(other.anchorImageBytes)) return false
+        } else if (other.anchorImageBytes != null) return false
+        if (firedAtMs != other.firedAtMs) return false
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = identityName.hashCode()
+        result = 31 * result + (anchorImageBytes?.contentHashCode() ?: 0)
+        result = 31 * result + firedAtMs.hashCode()
+        return result
+    }
+}
+
+class LiveViewModel(
+    application: Application,
+    private val lifecycleOwner: androidx.lifecycle.LifecycleOwner? = null,
+) : AndroidViewModel(application) {
 
     private val TAG = "LiveViewModel"
 
@@ -99,6 +141,21 @@ class LiveViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _state = MutableStateFlow(LiveUiState())
     val state: StateFlow<LiveUiState> = _state
+
+    private val _inputMode = MutableStateFlow(InputMode.META)
+    val inputMode: StateFlow<InputMode> = _inputMode.asStateFlow()
+
+    private val _lastMatchFlow = MutableStateFlow<MatchEvent?>(null)
+    val lastMatchFlow: StateFlow<MatchEvent?> = _lastMatchFlow.asStateFlow()
+
+    private val _permissionRequest = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val permissionRequest: SharedFlow<Unit> = _permissionRequest.asSharedFlow()
+
+    private var clearMatchJob: kotlinx.coroutines.Job? = null
+
+    private val metaFrameSource by lazy { MetaFrameSource(metaGlassesManager) }
+    private var phoneFrameSource: PhoneFrameSource? = null
+    private var currentSource: FrameSource? = null
 
     init {
         viewModelScope.launch { localFaceCache.loadFromDatabase() }
@@ -165,6 +222,73 @@ class LiveViewModel(application: Application) : AndroidViewModel(application) {
         AuditLogger.log(AuditLogger.Type.LIFECYCLE, "Glasses disconnected")
     }
 
+    fun requestPhoneCamera() {
+        val granted = ContextCompat.checkSelfPermission(
+            getApplication(),
+            Manifest.permission.CAMERA,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            switchToPhone()
+        } else {
+            viewModelScope.launch { _permissionRequest.emit(Unit) }
+        }
+    }
+
+    fun onCameraPermissionGranted() {
+        switchToPhone()
+    }
+
+    fun switchToMeta() {
+        viewModelScope.launch {
+            currentSource?.stop()
+            metaFrameSource.start()
+            currentSource = metaFrameSource
+            _inputMode.value = InputMode.META
+        }
+    }
+
+    private fun switchToPhone() {
+        viewModelScope.launch {
+            try {
+                val owner = lifecycleOwner ?: run {
+                    appendLog("Phone camera requires Activity lifecycle owner; not yet wired.")
+                    return@launch
+                }
+                currentSource?.stop()
+                val src = phoneFrameSource ?: PhoneFrameSource(getApplication(), owner).also { phoneFrameSource = it }
+                src.start()
+                currentSource = src
+                _inputMode.value = InputMode.PHONE
+            } catch (e: Exception) {
+                appendLog("Camera unavailable: ${e.message}")
+                _inputMode.value = InputMode.META
+            }
+        }
+    }
+
+    fun flipPhoneCamera() {
+        val src = phoneFrameSource ?: return
+        src.flipCamera()
+        viewModelScope.launch {
+            src.stop()
+            src.start()
+        }
+    }
+
+    fun previewUseCase(): androidx.camera.core.Preview? = phoneFrameSource?.previewUseCase
+
+    private fun emitMatchEvent(name: String, faceId: String) {
+        viewModelScope.launch {
+            val anchor = anchorImageRepository.get(faceId)?.imageBytes
+            _lastMatchFlow.value = MatchEvent(name, anchor, System.currentTimeMillis())
+            clearMatchJob?.cancel()
+            clearMatchJob = viewModelScope.launch {
+                delay(8_000L)
+                _lastMatchFlow.value = null
+            }
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         metaGlassesManager.stopVideoStream()
@@ -220,6 +344,7 @@ class LiveViewModel(application: Application) : AndroidViewModel(application) {
             if (cachedMatch != null) {
                 anchorImageRepository.upsert(cachedMatch.faceId, faceCrop, anchorScore)
                 appendLog("Cached Match: ${cachedMatch.primaryIdentity}. Encounters: ${cachedMatch.encounterCount}.")
+                emitMatchEvent(cachedMatch.primaryIdentity, cachedMatch.faceId)
                 appendLog("Known Links: ${cachedMatch.socialLinks}")
                 metaGlassesManager.playAudioMessage("Match found: ${cachedMatch.primaryIdentity}. Previous encounters: ${cachedMatch.encounterCount}")
                 if (cachedMatch.backgroundData == "{}" || cachedMatch.backgroundData.isEmpty()) {
@@ -258,6 +383,7 @@ class LiveViewModel(application: Application) : AndroidViewModel(application) {
                 appendLog("Links: ${socialLinks.joinToString(", ")}")
                 metaGlassesManager.playAudioMessage("Identity correlated: $primaryIdentity")
                 performDeepBackgroundScrape(primaryIdentity, faceId, embedding, socialLinks, ocrResult, faceCrop, anchorScore)
+                emitMatchEvent(primaryIdentity, faceId)
             } else {
                 appendLog("No online identity correlation found.")
                 metaGlassesManager.playAudioMessage("No online identity found.")
