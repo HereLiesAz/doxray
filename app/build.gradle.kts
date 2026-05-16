@@ -162,6 +162,7 @@ dependencies {
 
     // ML Kit
     implementation("com.google.mlkit:face-detection:16.1.7")
+    implementation("com.google.mlkit:text-recognition:16.0.1")
 
     // TensorFlow Lite
     implementation("org.tensorflow:tensorflow-lite:2.17.0")
