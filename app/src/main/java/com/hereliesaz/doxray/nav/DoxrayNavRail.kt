@@ -28,6 +28,7 @@ import com.hereliesaz.doxray.ui.dossier.DossierListScreen
 import com.hereliesaz.doxray.ui.dossier.DossierListViewModel
 import com.hereliesaz.doxray.ui.live.LiveScreen
 import com.hereliesaz.doxray.ui.live.LiveViewModel
+import com.hereliesaz.doxray.ui.live.LocalLiveViewModel
 
 @Composable
 fun DoxrayNavRail(
@@ -62,7 +63,7 @@ fun DoxrayNavRail(
         onscreen(alignment = Alignment.Center) {
             AzNavHost(navController = navController, startDestination = Destinations.LIVE) {
                 composable(Destinations.LIVE) {
-                    val vm: LiveViewModel = viewModel()
+                    val vm = LocalLiveViewModel.current
                     LiveScreen(viewModel = vm)
                 }
                 composable(Destinations.DOSSIERS) {

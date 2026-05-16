@@ -99,7 +99,7 @@ data class MatchEvent(
 
 class LiveViewModel(
     application: Application,
-    private val lifecycleOwner: androidx.lifecycle.LifecycleOwner? = null,
+    private val lifecycleOwner: androidx.lifecycle.LifecycleOwner,
 ) : AndroidViewModel(application) {
 
     private val TAG = "LiveViewModel"
@@ -250,12 +250,8 @@ class LiveViewModel(
     private fun switchToPhone() {
         viewModelScope.launch {
             try {
-                val owner = lifecycleOwner ?: run {
-                    appendLog("Phone camera requires Activity lifecycle owner; not yet wired.")
-                    return@launch
-                }
                 currentSource?.stop()
-                val src = phoneFrameSource ?: PhoneFrameSource(getApplication(), owner).also { phoneFrameSource = it }
+                val src = phoneFrameSource ?: PhoneFrameSource(getApplication(), lifecycleOwner).also { phoneFrameSource = it }
                 src.start()
                 currentSource = src
                 _inputMode.value = InputMode.PHONE
@@ -463,7 +459,7 @@ class LiveViewModel(
         }
     }
 
-    private fun appendLog(message: String) {
+    internal fun appendLog(message: String) {
         val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
         val newLines = listOf("[$time] $message") + _state.value.logLines
         _state.value = _state.value.copy(logLines = newLines.take(500))
