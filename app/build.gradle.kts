@@ -72,6 +72,9 @@ android {
         buildConfigField("String", "FACESEEK_KEY", "\"${secret("FACESEEK_KEY")}\"")
         buildConfigField("String", "LENSO_KEY", "\"${secret("LENSO_KEY")}\"")
         buildConfigField("String", "FACECHECK_KEY", "\"${secret("FACECHECK_KEY")}\"")
+        buildConfigField("String", "PIMEYES_KEY", "\"${secret("PIMEYES_KEY")}\"")
+        buildConfigField("String", "TINEYE_KEY", "\"${secret("TINEYE_KEY")}\"")
+        buildConfigField("String", "TINEYE_SECRET", "\"${secret("TINEYE_SECRET")}\"")
     }
 
     buildTypes {
