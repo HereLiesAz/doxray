@@ -10,24 +10,12 @@ import org.json.JSONObject
  *         "score": 0..1,
  *         "thumbnail": "<thumbnail url>" }, … ] }
  *
- * Returns the top result, or null when results are absent / empty / malformed.
- * faceId is derived from the thumbnail URL hash so two responses with the
- * same source-page URL but different thumbnails get distinct IDs.
+ * Returns the top result mapped to [PimEyesService.Result], or null when
+ * results are absent / empty / malformed.
  */
 object PimEyesResponseParser {
 
-    /**
-     * Top-level Result type. Task 3 (PimEyesService) re-exports this same shape
-     * as PimEyesService.Result and the parser switches to returning that.
-     * Until then, callers depend on this stand-alone type.
-     */
-    data class Result(
-        val faceId: String,
-        val confidence: Float,
-        val referenceImageUrl: String,
-    )
-
-    fun parse(jsonBody: String): Result? {
+    fun parse(jsonBody: String): PimEyesService.Result? {
         if (jsonBody.isBlank()) return null
         val json = try { JSONObject(jsonBody) } catch (e: Exception) { return null }
         val results = json.optJSONArray("results") ?: return null
@@ -36,7 +24,7 @@ object PimEyesResponseParser {
         val score = top.optDouble("score", 0.0).toFloat().coerceIn(0f, 1f)
         val url = top.optString("url", "")
         val thumbnail = top.optString("thumbnail", "")
-        return Result(
+        return PimEyesService.Result(
             faceId = "pimeyes_${thumbnail.hashCode()}",
             confidence = score,
             referenceImageUrl = url,
