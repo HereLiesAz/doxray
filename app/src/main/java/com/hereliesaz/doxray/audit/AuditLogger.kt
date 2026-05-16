@@ -18,7 +18,7 @@ import org.json.JSONObject
  * happens-before boundary.
  */
 object AuditLogger {
-    enum class Type { IDENTIFY, API_CALL, DOSSIER_READ, LIFECYCLE, REJECTED }
+    enum class Type { IDENTIFY, API_CALL, DOSSIER_READ, LIFECYCLE, REJECTED, REENCOUNTER }
 
     private var dao: AuditDao? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

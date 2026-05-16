@@ -49,14 +49,23 @@ class LocalFaceCache(
         if (bestMatch != null) {
             val currentTime = System.currentTimeMillis()
             identityDao.recordEncounter(bestMatch.faceId, currentTime)
+            val elapsedMs = currentTime - bestMatch.lastSeenTimestamp
+            val isReencounter = elapsedMs > 60 * 60 * 1000L // > 1 hour since last seen
             AuditLogger.log(
-                AuditLogger.Type.IDENTIFY,
-                summary = "Cache hit: ${bestMatch.primaryIdentity}",
+                if (isReencounter) AuditLogger.Type.REENCOUNTER else AuditLogger.Type.IDENTIFY,
+                summary = if (isReencounter)
+                    "Re-encountered ${bestMatch.primaryIdentity} (elapsed ${elapsedMs / 1000}s)"
+                else
+                    "Cache hit: ${bestMatch.primaryIdentity}",
                 details = JSONObject().apply {
                     put("faceId", bestMatch.faceId)
                     put("similarity", highestSimilarity)
+                    put("elapsedMs", elapsedMs)
                 },
             )
+            if (isReencounter) {
+                Log.i(TAG, "Re-encountered ${bestMatch.primaryIdentity} (last seen ${elapsedMs / 1000}s ago)")
+            }
             recordEncounter(bestMatch.faceId, currentTime)
             val index = memoryCache.indexOf(bestMatch)
             if (index != -1) {
