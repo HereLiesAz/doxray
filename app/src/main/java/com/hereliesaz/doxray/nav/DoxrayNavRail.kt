@@ -30,7 +30,10 @@ import com.hereliesaz.doxray.ui.live.LiveScreen
 import com.hereliesaz.doxray.ui.live.LiveViewModel
 
 @Composable
-fun DoxrayNavRail() {
+fun DoxrayNavRail(
+    onExportClicked: () -> Unit = {},
+    onImportClicked: () -> Unit = {},
+) {
     val navController = rememberNavController()
     val currentBackStack by navController.currentBackStackEntryAsState()
     // Capture composable-scoped color before entering the non-composable DSL lambda
@@ -46,6 +49,8 @@ fun DoxrayNavRail() {
         azRailItem(id = "live", text = "Live", route = Destinations.LIVE)
         azRailItem(id = "dossiers", text = "Dossiers", route = Destinations.DOSSIERS)
         azRailItem(id = "audit", text = "Audit", route = Destinations.AUDIT)
+        azMenuItem(id = "export-db", text = "Export DB", route = "export-db", onClick = onExportClicked)
+        azMenuItem(id = "import-db", text = "Import DB", route = "import-db", onClick = onImportClicked)
 
         onscreen(alignment = Alignment.Center) {
             AzNavHost(navController = navController, startDestination = Destinations.LIVE) {
