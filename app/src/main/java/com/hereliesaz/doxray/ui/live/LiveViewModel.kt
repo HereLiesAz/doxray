@@ -2,6 +2,7 @@ package com.hereliesaz.doxray.ui.live
 
 import android.app.Application
 import android.graphics.BitmapFactory
+import android.graphics.Rect
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -18,6 +19,7 @@ import com.hereliesaz.doxray.api.GoogleLensSearchService
 import com.hereliesaz.doxray.api.LensoScraperService
 import com.hereliesaz.doxray.api.LensoSearchService
 import com.hereliesaz.doxray.api.LocalFaceCache
+import com.hereliesaz.doxray.api.OcrService
 import com.hereliesaz.doxray.api.PimEyesScraperService
 import com.hereliesaz.doxray.api.PimEyesService
 import com.hereliesaz.doxray.api.SerpApiSiteSearchService
@@ -60,6 +62,7 @@ class LiveViewModel(application: Application) : AndroidViewModel(application) {
 
     private val metaGlassesManager = MetaGlassesManager(application)
     private val embeddingGenerator = EmbeddingGenerator(application)
+    private val ocrService = OcrService()
     private val appDatabase = AppDatabase.getDatabase(application)
     private val localFaceCache = LocalFaceCache(
         identityDao = appDatabase.identityDao(),
@@ -114,6 +117,7 @@ class LiveViewModel(application: Application) : AndroidViewModel(application) {
                             imageBytes: ByteArray,
                             trackingId: Int,
                             faceCrop: ByteArray,
+                            faceBbox: Rect,
                             eulerX: Float,
                             eulerY: Float,
                             eulerZ: Float,
@@ -121,7 +125,7 @@ class LiveViewModel(application: Application) : AndroidViewModel(application) {
                             if (activeInvestigations.containsKey(trackingId)) return
                             appendLog("Target acquired (ID: $trackingId). Processing search...")
                             val job = viewModelScope.launch {
-                                processFocusedFace(imageBytes, faceCrop, trackingId, eulerX, eulerY, eulerZ)
+                                processFocusedFace(imageBytes, faceCrop, faceBbox, trackingId, eulerX, eulerY, eulerZ)
                             }
                             activeInvestigations[trackingId] = job
                         }
@@ -167,6 +171,7 @@ class LiveViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun processFocusedFace(
         imageBytes: ByteArray,
         faceCrop: ByteArray,
+        faceBbox: Rect,
         trackingId: Int,
         eulerX: Float,
         eulerY: Float,
@@ -203,6 +208,10 @@ class LiveViewModel(application: Application) : AndroidViewModel(application) {
                 return
             }
             val embedding = embeddingGenerator.generateEmbedding(faceCrop)
+            val ocrResult = ocrService.extract(imageBytes, faceBbox)
+            if (ocrResult != null) {
+                appendLog("Visible text: \"${ocrResult.primaryLine}\"")
+            }
             val cachedMatch = localFaceCache.findMatch(embedding)
             if (cachedMatch != null) {
                 appendLog("Cached Match: ${cachedMatch.primaryIdentity}. Encounters: ${cachedMatch.encounterCount}.")
@@ -210,7 +219,7 @@ class LiveViewModel(application: Application) : AndroidViewModel(application) {
                 metaGlassesManager.playAudioMessage("Match found: ${cachedMatch.primaryIdentity}. Previous encounters: ${cachedMatch.encounterCount}")
                 if (cachedMatch.backgroundData == "{}" || cachedMatch.backgroundData.isEmpty()) {
                     metaGlassesManager.playAudioMessage("Resuming background investigation.")
-                    performDeepBackgroundScrape(cachedMatch.primaryIdentity, cachedMatch.faceId, embedding, cachedMatch.socialLinks.split(","))
+                    performDeepBackgroundScrape(cachedMatch.primaryIdentity, cachedMatch.faceId, embedding, cachedMatch.socialLinks.split(","), ocrResult)
                 }
                 return
             }
@@ -243,7 +252,7 @@ class LiveViewModel(application: Application) : AndroidViewModel(application) {
                 appendLog("Identity correlated: $primaryIdentity")
                 appendLog("Links: ${socialLinks.joinToString(", ")}")
                 metaGlassesManager.playAudioMessage("Identity correlated: $primaryIdentity")
-                performDeepBackgroundScrape(primaryIdentity, faceId, embedding, socialLinks)
+                performDeepBackgroundScrape(primaryIdentity, faceId, embedding, socialLinks, ocrResult)
             } else {
                 appendLog("No online identity correlation found.")
                 metaGlassesManager.playAudioMessage("No online identity found.")
@@ -259,6 +268,7 @@ class LiveViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun performDeepBackgroundScrape(
         primaryIdentity: String, faceId: String, embedding: FloatArray, socialLinks: List<String>,
+        ocrResult: OcrService.OcrResult?,
     ) {
         metaGlassesManager.playAudioMessage("Digging for background data.")
         appendLog("Digging for deep background info on: $primaryIdentity...")
@@ -303,10 +313,14 @@ class LiveViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
+        if (ocrResult != null) {
+            bgDataJson.put("ocr", ocrResult.toJson())
+        }
         localFaceCache.cacheIdentity(
             faceId = faceId, embedding = embedding,
             primaryIdentity = primaryIdentity, socialLinks = socialLinks,
             backgroundData = bgDataJson.toString(),
+            visibleText = ocrResult?.primaryLine,
         )
 
         if (bgDataJson.length() > 0) {

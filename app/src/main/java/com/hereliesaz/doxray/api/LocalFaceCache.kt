@@ -98,6 +98,7 @@ class LocalFaceCache(
         primaryIdentity: String,
         socialLinks: List<String>,
         backgroundData: String,
+        visibleText: String? = null,
     ) = withContext(Dispatchers.IO) {
         // Re-id cluster check: if a near-duplicate dossier already exists,
         // record the encounter against it instead of spawning a new one.
@@ -137,6 +138,7 @@ class LocalFaceCache(
             firstSeenTimestamp = currentTime,
             lastSeenTimestamp = currentTime,
             encounterCount = 1,
+            visibleText = visibleText,
         )
         identityDao.insertIdentity(record)
         memoryCache.add(record)
