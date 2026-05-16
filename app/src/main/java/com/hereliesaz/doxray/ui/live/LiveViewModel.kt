@@ -12,20 +12,30 @@ import com.hereliesaz.doxray.api.FaceCheckIdService
 import com.hereliesaz.doxray.api.FaceSeekScraperService
 import com.hereliesaz.doxray.api.FaceSeekService
 import com.hereliesaz.doxray.api.FaceTrackerManager
+import com.hereliesaz.doxray.api.GoogleLensScraperService
+import com.hereliesaz.doxray.api.GoogleLensSearchService
 import com.hereliesaz.doxray.api.LensoScraperService
 import com.hereliesaz.doxray.api.LensoSearchService
 import com.hereliesaz.doxray.api.LocalFaceCache
+import com.hereliesaz.doxray.api.PimEyesScraperService
+import com.hereliesaz.doxray.api.PimEyesService
 import com.hereliesaz.doxray.api.SmartBackgroundChecksScraper
+import com.hereliesaz.doxray.api.TinEyeScraperService
+import com.hereliesaz.doxray.api.TinEyeSearchService
 import com.hereliesaz.doxray.api.YandexScraperService
 import com.hereliesaz.doxray.api.YandexSearchService
 import com.hereliesaz.doxray.audit.AuditLogger
 import com.hereliesaz.doxray.db.AppDatabase
+import com.hereliesaz.doxray.identify.IdentifyPipeline
 import com.hereliesaz.doxray.location.LocationService
 import com.hereliesaz.doxray.meta.MetaGlassesManager
 import com.hereliesaz.doxray.quality.FaceQualityScorer
 import com.hereliesaz.doxray.quality.QualityResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -54,16 +64,24 @@ class LiveViewModel(application: Application) : AndroidViewModel(application) {
         locationService = LocationService(application),
     )
 
-    private val faceSeekService = FaceSeekService()
-    private val yandexSearchService = YandexSearchService()
-    private val lensoSearchService = LensoSearchService()
-    private val faceCheckIdService = FaceCheckIdService()
-    private val faceSeekScraper = FaceSeekScraperService()
-    private val yandexScraper = YandexScraperService()
-    private val lensoScraper = LensoScraperService()
-    private val faceCheckIdScraper = FaceCheckIdScraperService()
     private val smartBgScraper = SmartBackgroundChecksScraper()
     private val cyberBgScraper = CyberBackgroundChecksScraper()
+    private val identifyPipeline = IdentifyPipeline(
+        lensoService = LensoSearchService(),
+        lensoScraper = LensoScraperService(),
+        faceSeekService = FaceSeekService(),
+        faceSeekScraper = FaceSeekScraperService(),
+        faceCheckService = FaceCheckIdService(),
+        faceCheckScraper = FaceCheckIdScraperService(),
+        pimEyesService = PimEyesService(),
+        pimEyesScraper = PimEyesScraperService(),
+        yandexService = YandexSearchService(),
+        yandexScraper = YandexScraperService(),
+        tinEyeService = TinEyeSearchService(),
+        tinEyeScraper = TinEyeScraperService(),
+        googleLensService = GoogleLensSearchService(),
+        googleLensScraper = GoogleLensScraperService(),
+    )
     private val faceTrackerManager = FaceTrackerManager()
     private val activeInvestigations = ConcurrentHashMap<Int, Job>()
 
@@ -191,65 +209,36 @@ class LiveViewModel(application: Application) : AndroidViewModel(application) {
                 return
             }
 
-            var primaryIdentity = ""
-            var socialLinks = listOf<String>()
-            var referenceImageUrl = ""
-            var faceId = ""
-
-            var lensoResult = lensoSearchService.identifyFace(imageBytes)
-            if (lensoResult == null) {
-                appendLog("Lenso API failed, trying scraper fallback...")
-                lensoResult = lensoScraper.identifyFace(imageBytes)
-            }
-            if (lensoResult != null && lensoResult.confidence > 0.6f) {
-                appendLog("Lenso face matched from domain: ${lensoResult.sourceDomain}")
-                referenceImageUrl = lensoResult.referenceImageUrl
-                faceId = lensoResult.faceId
-            } else {
-                var faceResult = faceSeekService.identifyFace(imageBytes)
-                if (faceResult == null) {
-                    appendLog("FaceSeek API failed, trying scraper fallback...")
-                    faceResult = faceSeekScraper.identifyFace(imageBytes)
-                }
-                if (faceResult != null && faceResult.confidence > 0.6f) {
-                    appendLog("FaceSeek matched! ID: ${faceResult.faceId}")
-                    referenceImageUrl = faceResult.referenceImageUrl
-                    faceId = faceResult.faceId
-                } else {
-                    var faceCheckResult = faceCheckIdService.identifyFace(imageBytes)
-                    if (faceCheckResult == null) {
-                        appendLog("FaceCheck.ID API failed, trying scraper fallback...")
-                        faceCheckResult = faceCheckIdScraper.identifyFace(imageBytes)
-                    }
-                    if (faceCheckResult != null && faceCheckResult.confidence > 0.6f) {
-                        appendLog("FaceCheck.ID matched! ID: ${faceCheckResult.faceId}")
-                        referenceImageUrl = faceCheckResult.referenceImageUrl
-                        faceId = faceCheckResult.faceId
-                    }
-                }
-            }
-
-            if (referenceImageUrl.isNotEmpty()) {
-                metaGlassesManager.playAudioMessage("Face matched. Correlating identity...")
-                var identityResult = yandexSearchService.searchIdentity(referenceImageUrl)
-                if (identityResult == null) {
-                    appendLog("Yandex API failed, trying scraper fallback...")
-                    identityResult = yandexScraper.searchIdentity(referenceImageUrl)
-                }
-                if (identityResult != null && identityResult.identities.isNotEmpty()) {
-                    primaryIdentity = identityResult.identities.first()
-                    socialLinks = identityResult.socialLinks
-                }
-            } else {
+            val faceHits = identifyPipeline.runFaceTier(imageBytes)
+            if (faceHits.isEmpty()) {
                 metaGlassesManager.playAudioMessage("No confident face match found.")
+                return
             }
+            appendLog("Face matched on ${faceHits.size} provider(s); fanning correlation.")
+            metaGlassesManager.playAudioMessage("Face matched. Correlating identity...")
+
+            val merged = coroutineScope {
+                faceHits
+                    .map { hit -> async { identifyPipeline.runCorrelationTier(hit.referenceUrl) } }
+                    .awaitAll()
+                    .fold(IdentifyPipeline.CorrelationHit(emptyList(), emptyList())) { acc, r ->
+                        IdentifyPipeline.CorrelationHit(
+                            identities = (acc.identities + r.identities).distinct(),
+                            socialLinks = (acc.socialLinks + r.socialLinks).distinct(),
+                        )
+                    }
+            }
+
+            val primaryIdentity = merged.identities.firstOrNull().orEmpty()
+            val socialLinks = merged.socialLinks
+            val faceId = faceHits.maxByOrNull { it.confidence }!!.faceId
 
             if (primaryIdentity.isNotEmpty()) {
                 appendLog("Identity correlated: $primaryIdentity")
                 appendLog("Links: ${socialLinks.joinToString(", ")}")
                 metaGlassesManager.playAudioMessage("Identity correlated: $primaryIdentity")
                 performDeepBackgroundScrape(primaryIdentity, faceId, embedding, socialLinks)
-            } else if (referenceImageUrl.isNotEmpty()) {
+            } else {
                 appendLog("No online identity correlation found.")
                 metaGlassesManager.playAudioMessage("No online identity found.")
             }
