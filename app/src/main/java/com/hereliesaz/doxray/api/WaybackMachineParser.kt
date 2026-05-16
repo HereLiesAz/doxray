@@ -4,13 +4,7 @@ import org.json.JSONObject
 
 object WaybackMachineParser {
 
-    data class Snapshot(
-        val originalUrl: String,
-        val archiveUrl: String,
-        val timestamp: String,
-    )
-
-    fun parse(jsonBody: String, originalUrl: String): Snapshot? {
+    fun parse(jsonBody: String, originalUrl: String): WaybackMachineService.Snapshot? {
         if (jsonBody.isBlank()) return null
         val json = try { JSONObject(jsonBody) } catch (e: Exception) { return null }
         val snapshots = json.optJSONObject("archived_snapshots") ?: return null
@@ -18,7 +12,7 @@ object WaybackMachineParser {
         val archiveUrl = closest.optString("url", "")
         val timestamp = closest.optString("timestamp", "")
         if (archiveUrl.isEmpty()) return null
-        return Snapshot(
+        return WaybackMachineService.Snapshot(
             originalUrl = originalUrl,
             archiveUrl = archiveUrl,
             timestamp = timestamp,
