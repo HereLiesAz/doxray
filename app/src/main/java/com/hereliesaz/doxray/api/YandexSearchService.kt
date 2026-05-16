@@ -28,13 +28,15 @@ class YandexSearchService {
         ): Response<SerpApiResponse>
     }
 
-    private val retrofit: Retrofit = Retrofit.Builder()
-        .baseUrl("https://serpapi.com/")
-        .client(HttpClients.api())
-        .addConverterFactory(GsonConverterFactory.create())
-        .build()
+    private val retrofit: Retrofit by lazy {
+        Retrofit.Builder()
+            .baseUrl("https://serpapi.com/")
+            .client(HttpClients.api())
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+    }
 
-    private val api: SerpApi = retrofit.create(SerpApi::class.java)
+    private val api: SerpApi by lazy { retrofit.create(SerpApi::class.java) }
 
     suspend fun searchIdentity(imageUrl: String): Result? = withContext(Dispatchers.IO) {
         if (SERP_API_KEY.isBlank()) {
