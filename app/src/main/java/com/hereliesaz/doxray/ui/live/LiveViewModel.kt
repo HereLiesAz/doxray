@@ -214,7 +214,7 @@ class LiveViewModel(
             )
             return
         }
-        viewModelScope.launch {
+        connectionJob = viewModelScope.launch {
             when (val result = metaGlassesManager.connect()) {
                 MetaGlassesManager.ConnectResult.Success -> {
                     appendLog("Connected successfully.")
