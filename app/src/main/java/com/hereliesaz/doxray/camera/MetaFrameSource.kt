@@ -30,6 +30,9 @@ class MetaFrameSource(private val manager: MetaGlassesManager) : FrameSource {
 
     override suspend fun start() {
         manager.connect()
+        // Caller is expected to consult [MetaGlassesManager.isConnectedFlow]
+        // for whether a paired device was found; framesFlow simply stays cold
+        // when no stream session can be created.
     }
 
     override suspend fun stop() {

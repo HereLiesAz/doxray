@@ -39,6 +39,7 @@ fun LiveScreen(viewModel: LiveViewModel) {
     when (inputMode) {
         InputMode.META -> MetaLiveSurface(
             isConnected = state.isConnected,
+            hasMetaSdk = state.hasMetaSdk,
             logLines = state.logLines,
             onConnect = { viewModel.connect() },
             onDisconnect = { viewModel.disconnect() },
@@ -55,6 +56,7 @@ fun LiveScreen(viewModel: LiveViewModel) {
 @Composable
 private fun MetaLiveSurface(
     isConnected: Boolean,
+    hasMetaSdk: Boolean,
     logLines: List<String>,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
@@ -67,6 +69,16 @@ private fun MetaLiveSurface(
             fontSize = 18.sp,
             fontWeight = FontWeight.Bold,
         )
+        if (!hasMetaSdk) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Meta Wearables DAT SDK not bundled in this build (closed beta). " +
+                    "Even if your Ray-Bans are paired in the Meta View app, this third-party " +
+                    "build cannot access their camera. Switch to Camera mode to use the phone.",
+                fontSize = 13.sp,
+                color = Color(0xFFD08A2C),
+            )
+        }
         Spacer(modifier = Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Button(onClick = onConnect, enabled = !isConnected) { Text("Connect") }
