@@ -51,7 +51,7 @@ class MetaGlassesManager(private val context: Context) {
      * fire-and-forgetting on a background coroutine. Callers should observe
      * [isConnectedFlow] if they want to react to disconnect events later.
      */
-    suspend fun connect(): ConnectResult = withContext(Dispatchers.Main) {
+    suspend fun connect(): ConnectResult = withContext(Dispatchers.IO) {
         Log.d(TAG, "Attempting to connect to Meta Ray Bans via DAT SDK...")
         try {
             val deviceManager = DeviceManager.getInstance(context)
