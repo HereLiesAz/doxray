@@ -173,7 +173,7 @@ class LiveViewModel(
         ) {
             if (activeInvestigations.containsKey(trackingId)) return
             appendLog("Target acquired (ID: $trackingId). Processing search...")
-            val job = viewModelScope.launch {
+            val job = viewModelScope.launch(Dispatchers.Default) {
                 processFocusedFace(imageBytes, faceCrop, faceBbox, trackingId, eulerX, eulerY, eulerZ)
             }
             activeInvestigations[trackingId] = job
