@@ -33,6 +33,7 @@ import com.hereliesaz.doxray.api.TinEyeSearchService
 import com.hereliesaz.doxray.api.WaybackMachineService
 import com.hereliesaz.doxray.api.YandexScraperService
 import com.hereliesaz.doxray.api.YandexSearchService
+import com.hereliesaz.doxray.BuildConfig
 import com.hereliesaz.doxray.audit.AuditLogger
 import com.hereliesaz.doxray.camera.FrameSource
 import com.hereliesaz.doxray.camera.MetaFrameSource
@@ -56,6 +57,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -67,6 +69,7 @@ import java.util.concurrent.ConcurrentHashMap
 data class LiveUiState(
     val isConnected: Boolean = false,
     val logLines: List<String> = emptyList(),
+    val hasMetaSdk: Boolean = BuildConfig.HAS_META_SDK,
 )
 
 enum class InputMode { META, PHONE }
@@ -156,70 +159,93 @@ class LiveViewModel(
     private val metaFrameSource by lazy { MetaFrameSource(metaGlassesManager) }
     private var phoneFrameSource: PhoneFrameSource? = null
     private var currentSource: FrameSource? = null
+    private var frameCollectorJob: Job? = null
+
+    private val faceFocusListener = object : FaceTrackerManager.FaceFocusListener {
+        override fun onFaceFocused(
+            imageBytes: ByteArray,
+            trackingId: Int,
+            faceCrop: ByteArray,
+            faceBbox: Rect,
+            eulerX: Float,
+            eulerY: Float,
+            eulerZ: Float,
+        ) {
+            if (activeInvestigations.containsKey(trackingId)) return
+            appendLog("Target acquired (ID: $trackingId). Processing search...")
+            val job = viewModelScope.launch {
+                processFocusedFace(imageBytes, faceCrop, faceBbox, trackingId, eulerX, eulerY, eulerZ)
+            }
+            activeInvestigations[trackingId] = job
+        }
+
+        override fun onFaceLost(trackingId: Int) {
+            val job = activeInvestigations.remove(trackingId)
+            if (job != null && job.isActive) {
+                appendLog("Target lost (ID: $trackingId). Halting active investigation.")
+                job.cancel()
+            }
+        }
+
+        override fun onError(e: Exception) {
+            Log.e(TAG, "Face tracking error", e)
+        }
+    }
 
     init {
         viewModelScope.launch { localFaceCache.loadFromDatabase() }
+        // Mirror the real DAT-side connection state into the UI state so
+        // "Status: Connected" only lights up when a paired device responds.
+        viewModelScope.launch {
+            metaGlassesManager.isConnectedFlow.collect { connected ->
+                _state.value = _state.value.copy(isConnected = connected)
+            }
+        }
     }
 
     fun connect() {
         appendLog("Attempting connection...")
         AuditLogger.log(AuditLogger.Type.LIFECYCLE, "Connect requested")
-        try {
-            metaGlassesManager.connect()
-            _state.value = _state.value.copy(isConnected = true)
-            appendLog("Connected successfully.")
-            AuditLogger.log(AuditLogger.Type.LIFECYCLE, "Glasses connected")
-
-            metaGlassesManager.startVideoStream(object : MetaGlassesManager.FrameListener {
-                override fun onFrameReceived(imageBytes: ByteArray) {
-                    faceTrackerManager.processFrame(imageBytes, object : FaceTrackerManager.FaceFocusListener {
-                        override fun onFaceFocused(
-                            imageBytes: ByteArray,
-                            trackingId: Int,
-                            faceCrop: ByteArray,
-                            faceBbox: Rect,
-                            eulerX: Float,
-                            eulerY: Float,
-                            eulerZ: Float,
-                        ) {
-                            if (activeInvestigations.containsKey(trackingId)) return
-                            appendLog("Target acquired (ID: $trackingId). Processing search...")
-                            val job = viewModelScope.launch {
-                                processFocusedFace(imageBytes, faceCrop, faceBbox, trackingId, eulerX, eulerY, eulerZ)
-                            }
-                            activeInvestigations[trackingId] = job
-                        }
-
-                        override fun onFaceLost(trackingId: Int) {
-                            val job = activeInvestigations.remove(trackingId)
-                            if (job != null && job.isActive) {
-                                appendLog("Target lost (ID: $trackingId). Halting active investigation.")
-                                job.cancel()
-                            }
-                        }
-
-                        override fun onError(e: Exception) {
-                            Log.e(TAG, "Face tracking error", e)
-                        }
-                    })
+        if (!BuildConfig.HAS_META_SDK) {
+            appendLog(
+                "This build was compiled without the Meta Wearables DAT SDK " +
+                    "(closed beta). Glasses access is unavailable — switch to Camera mode.",
+            )
+            return
+        }
+        viewModelScope.launch {
+            when (val result = metaGlassesManager.connect()) {
+                MetaGlassesManager.ConnectResult.Success -> {
+                    appendLog("Connected successfully.")
+                    AuditLogger.log(AuditLogger.Type.LIFECYCLE, "Glasses connected")
+                    startFrameCollector(metaFrameSource)
+                    _inputMode.value = InputMode.META
+                    currentSource = metaFrameSource
                 }
-
-                override fun onError(error: Throwable) {
-                    appendLog("Stream Error: ${error.message}")
+                MetaGlassesManager.ConnectResult.NoPairedDevice -> {
+                    appendLog(
+                        "No paired Meta wearables found. Pair your Ray-Bans in the " +
+                            "Meta View app first, then retry.",
+                    )
                 }
-            })
-        } catch (e: Exception) {
-            _state.value = _state.value.copy(isConnected = false)
-            appendLog("Connection failed: ${e.message}")
+                is MetaGlassesManager.ConnectResult.Failure -> {
+                    appendLog("Connection failed: ${result.cause.message}")
+                }
+            }
         }
     }
 
     fun disconnect() {
-        metaGlassesManager.stopVideoStream()
-        metaGlassesManager.disconnect()
-        _state.value = _state.value.copy(isConnected = false)
-        appendLog("Disconnected from glasses.")
-        AuditLogger.log(AuditLogger.Type.LIFECYCLE, "Glasses disconnected")
+        viewModelScope.launch {
+            frameCollectorJob?.cancel()
+            frameCollectorJob = null
+            currentSource?.stop()
+            currentSource = null
+            metaGlassesManager.stopVideoStream()
+            metaGlassesManager.disconnect()
+            appendLog("Disconnected from glasses.")
+            AuditLogger.log(AuditLogger.Type.LIFECYCLE, "Glasses disconnected")
+        }
     }
 
     fun requestPhoneCamera() {
@@ -240,24 +266,45 @@ class LiveViewModel(
 
     fun switchToMeta() {
         viewModelScope.launch {
+            frameCollectorJob?.cancel()
             currentSource?.stop()
-            metaFrameSource.start()
-            currentSource = metaFrameSource
             _inputMode.value = InputMode.META
+            currentSource = null
+            // Don't auto-connect on mode switch; let the user press Connect so
+            // the audit trail and the surfaced error (no paired device / stub
+            // build) are tied to an explicit user action.
+            if (!BuildConfig.HAS_META_SDK) {
+                appendLog(
+                    "Meta DAT SDK not bundled in this build; Camera mode is the " +
+                        "only functional input. Press Connect to see details.",
+                )
+            }
         }
     }
 
     private fun switchToPhone() {
         viewModelScope.launch {
             try {
+                frameCollectorJob?.cancel()
                 currentSource?.stop()
                 val src = phoneFrameSource ?: PhoneFrameSource(getApplication(), lifecycleOwner).also { phoneFrameSource = it }
                 src.start()
                 currentSource = src
                 _inputMode.value = InputMode.PHONE
+                startFrameCollector(src)
+                appendLog("Camera mode active. Scanning for faces…")
             } catch (e: Exception) {
                 appendLog("Camera unavailable: ${e.message}")
                 _inputMode.value = InputMode.META
+            }
+        }
+    }
+
+    private fun startFrameCollector(source: FrameSource) {
+        frameCollectorJob?.cancel()
+        frameCollectorJob = viewModelScope.launch {
+            source.framesFlow.collect { bytes ->
+                faceTrackerManager.processFrame(bytes, faceFocusListener)
             }
         }
     }
