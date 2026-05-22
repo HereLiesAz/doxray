@@ -75,6 +75,7 @@ android {
         buildConfigField("String", "PIMEYES_KEY", "\"${secret("PIMEYES_KEY")}\"")
         buildConfigField("String", "TINEYE_KEY", "\"${secret("TINEYE_KEY")}\"")
         buildConfigField("String", "TINEYE_SECRET", "\"${secret("TINEYE_SECRET")}\"")
+        buildConfigField("boolean", "HAS_META_SDK", hasMetaSdk.toString())
     }
 
     buildTypes {
