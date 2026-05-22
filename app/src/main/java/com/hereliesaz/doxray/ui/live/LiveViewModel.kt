@@ -161,6 +161,7 @@ class LiveViewModel(
     private var phoneFrameSource: PhoneFrameSource? = null
     private var currentSource: FrameSource? = null
     private var frameCollectorJob: Job? = null
+    private var connectionJob: Job? = null
 
     private val faceFocusListener = object : FaceTrackerManager.FaceFocusListener {
         override fun onFaceFocused(
