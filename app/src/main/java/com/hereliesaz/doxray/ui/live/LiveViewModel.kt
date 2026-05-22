@@ -204,6 +204,7 @@ class LiveViewModel(
     }
 
     fun connect() {
+        if (connectionJob?.isActive == true) return
         appendLog("Attempting connection...")
         AuditLogger.log(AuditLogger.Type.LIFECYCLE, "Connect requested")
         if (!BuildConfig.HAS_META_SDK) {
