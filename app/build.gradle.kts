@@ -65,8 +65,8 @@ android {
         applicationId = "com.hereliesaz.doxray"
         minSdk = 28
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = currentVersionCode
+        versionName = currentVersionName
 
         buildConfigField("String", "SERPAPI_KEY", "\"${secret("SERPAPI_KEY")}\"")
         buildConfigField("String", "FACESEEK_KEY", "\"${secret("FACESEEK_KEY")}\"")
