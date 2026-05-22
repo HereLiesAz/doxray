@@ -303,7 +303,7 @@ class LiveViewModel(
 
     private fun startFrameCollector(source: FrameSource) {
         frameCollectorJob?.cancel()
-        frameCollectorJob = viewModelScope.launch {
+        frameCollectorJob = viewModelScope.launch(Dispatchers.Default) {
             source.framesFlow.collect { bytes ->
                 faceTrackerManager.processFrame(bytes, faceFocusListener)
             }
