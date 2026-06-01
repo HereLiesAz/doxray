@@ -31,8 +31,8 @@ dependencyResolutionManagement {
                 name = "GitHubPackages"
                 url = uri(ghUrl)
                 credentials {
-                    username = prop("gh.user") ?: "token"
-                    password = prop("gh.token") ?: ""
+                    username = prop("GH_ACTOR") ?: "token"
+                    password = prop("GH_TOKEN") ?: ""
                 }
             }
         }
